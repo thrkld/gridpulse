@@ -2,7 +2,7 @@ import requests
 from datetime import timezone,datetime
 
 # Ingestion of demand data from NESO
-def nesoIngestion() -> dict:
+def neso_ingestion() -> dict:
     sql = """
         SELECT *
         FROM "177f6fa4-ae49-4182-81ea-0c6b35f26ca6"
@@ -14,6 +14,6 @@ def nesoIngestion() -> dict:
     ).json()
 
     return {
-        "ingestedUTC" : datetime.now(timezone.utc).isoformat(),
-        "demandData" : payload
+        "ingested_utc" : datetime.now(timezone.utc).isoformat(),
+        "demand_data" : payload
     }
