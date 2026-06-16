@@ -10,13 +10,9 @@ def carbonIntensityIngestion() -> dict:
   n = requests.get('https://api.carbonintensity.org.uk/intensity', params={}, headers = headers)
   g = requests.get('https://api.carbonintensity.org.uk/generation', params={}, headers = headers)
 
-  regionalData = r.json()['data']
-  nationalData = n.json()['data']
-  generationData = g.json()['data']
-
   return {
-    "ingestedUTC" : datetime.now(timezone.utc).isoformat,
-    regionalData : r.json(),
-    nationalData : n.json(),
-    generationData : g.json()
+    "ingestedUTC" : datetime.now(timezone.utc).isoformat(),
+    "regionalData" : r.json(),
+    "nationalData" : n.json(),
+    "generationData" : g.json()
   }
