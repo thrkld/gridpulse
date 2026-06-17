@@ -1,1 +1,9 @@
 /experimentation.ipynb
+.env
+__pycache__/
+*.pyc
+.venv/
+*.ipynb_checkpoints/
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
