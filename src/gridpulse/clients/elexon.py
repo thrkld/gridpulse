@@ -1,25 +1,25 @@
 import requests
 from datetime import date, datetime, timedelta, timezone
 
-# Ingests Elexon imbalance data
-# NOTE: yesterday AND today as dates treated in full therefore required for utc overlap
-def elexon_ingestion() -> dict:
-    BASE = "https://data.elexon.co.uk/bmrs/api/v1"
-
-    date_yesterday = date.today() - timedelta(days=1)
-    imbalance_url_ydy = f"{BASE}/balancing/settlement/system-prices/{date_yesterday}"
-    imbalance_url_tdy = f"{BASE}/balancing/settlement/system-prices/{date.today()}"
-    now_utc = datetime.now(timezone.utc).isoformat()
-    market_index_url = f"{BASE}/balancing/pricing/market-index?from={date_yesterday}T00:00&to={now_utc}"
-
-    imbalance_payload_ydy = requests.get(imbalance_url_ydy).json()
-    imbalance_payload_tdy = requests.get(imbalance_url_tdy).json()
-    market_index_payload = requests.get(market_index_url).json()
-    
+# Given a date, fetch imbalance data (settlement/system-prices) for that date
+def fetch_elexon_imbalance(fetch_date: date) -> dict:
+    r = requests.get(f"https://data.elexon.co.uk/bmrs/api/v1/balancing/settlement/system-prices/{fetch_date}",timeout=30)
+    r.raise_for_status()
     return {
         "ingested_utc" : datetime.now(timezone.utc).isoformat(),
-        "imbalance_data_yesterday" : imbalance_payload_ydy,
-        "imbalance_data_today" : imbalance_payload_tdy,
-        "market_index_data" : market_index_payload
+        "fetch_date" : str(fetch_date),
+        "payload" : r.json()
     }
 
+# Given 2 dates, fetch market index data between them (pricing/market-index)
+def fetch_elexon_market_index(from_dt: datetime, to_dt: datetime) -> dict:
+    from_str = from_dt.strftime("%Y-%m-%dT%H:%MZ")
+    to_str = to_dt.strftime("%Y-%m-%dT%H:%MZ")
+    r = requests.get(f"https://data.elexon.co.uk/bmrs/api/v1/balancing/pricing/market-index?from={from_str}&to={to_str}", timeout=30)
+    r.raise_for_status()
+    return {
+        "ingested_utc" : datetime.now(timezone.utc).isoformat(),
+        "from_dt" : from_str,
+        "to_dt" : to_str,
+        "payload" : r.json()
+    }
