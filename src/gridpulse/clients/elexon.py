@@ -11,7 +11,7 @@ def fetch_elexon_imbalance(fetch_date: date) -> dict:
         "payload" : r.json()
     }
 
-# Given 2 dates, fetch market index data between them (pricing/market-index)
+# Given 2 datetimes, fetch market index data between them (pricing/market-index)
 def fetch_elexon_market_index(from_dt: datetime, to_dt: datetime) -> dict:
     from_str = from_dt.strftime("%Y-%m-%dT%H:%MZ")
     to_str = to_dt.strftime("%Y-%m-%dT%H:%MZ")
