@@ -11,3 +11,4 @@ decisions.txt
 .DS_Store
 .vscode/
 */gridpulse.egg-info/
+build/*
