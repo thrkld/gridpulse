@@ -12,3 +12,10 @@ decisions.txt
 .vscode/
 */gridpulse.egg-info/
 build/*
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+.dbt-venv/
+logs/
