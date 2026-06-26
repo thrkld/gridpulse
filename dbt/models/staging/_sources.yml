@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: gridpulse
+    description: "Raw API responses landed by the Python ingestion layer."
+    schema: public
+    tables:
+      - name: carbon_intensity_raw
+        description: "Untouched Carbon Intensity API responses (regional, national, generation)."
+      - name: neso_raw
+        description: "Untouched Neso API responses (raw demand data)."
+      - name: elexon_raw
+        description: "Untouched Elexon BMRS responses (imbalance, market-index)."
