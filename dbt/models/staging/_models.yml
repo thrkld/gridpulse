@@ -1,0 +1,111 @@
+version: 2
+
+models:
+
+  - name: stg_ci_regional_generation
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - ingested_at
+              - start_time
+              - region_id
+              - fuel
+    columns:
+
+      - name: ingested_at
+        description: "datetime (UTC) of original ingestion from endpoint"
+        data_tests:
+          - not_null
+  
+      - name: start_time
+        description: "datetime (UTC) of start of half hour period in which data was read"
+        data_tests:
+          - not_null
+  
+      - name: end_time
+        description: "datetime (UTC) of end of half hour period in which data was read"
+        data_tests:
+          - not_null
+
+      - name: region_id
+        description: "identifier of region"
+        data_tests:
+          - not_null
+    
+      - name: fuel
+        description: "type of fuel"
+        data_tests:
+          - not_null
+
+      - name: fuel_perc
+        description: "percentage of total fuel usage"
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
+
+
+
+  - name: stg_ci_regional
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - ingested_at
+              - start_time
+              - region_id
+    columns:
+
+      - name: ingested_at
+        description: "datetime (UTC) of original ingestion from endpoint"
+        data_tests:
+          - not_null
+
+      - name: start_time
+        description: "datetime (UTC) of start of half hour period in which data was read"
+        data_tests:
+          - not_null
+
+      - name: end_time
+        description: "datetime (UTC) of end of half hour period in which data was read"
+        data_tests:
+          - not_null
+
+      - name: region_id
+        description: "identifier of region"
+        data_tests:
+          - not_null
+
+      - name: region_name
+        data_tests:
+          - not_null:
+              config:
+                severity: warn   # not critical, absence still strange
+
+      - name: region_shortname
+        data_tests:
+          - not_null:
+              config:
+                severity: warn
+
+      - name: intensity_index
+        description: "plaintext representing severity of carbon intensity (from very low to very high)"
+        data_tests:
+          - not_null
+    
+      - name: intensity_forecast
+        description: "forecast carbon intensity (gCO2/kWh) for the half hour"
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 937 # Assuming the region only uses highest carbon intensity (coal's factor = 937)
+
+      
+
+          
+       
