@@ -1,0 +1,111 @@
+version: 2
+
+models:
+  - name: stg_elexon_imbalance
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - ingested_at
+              - start_time
+    columns:
+      - name: ingested_at
+        description: "datetime (UTC) of original ingestion from endpoint."
+        data_tests:
+          - not_null
+  
+      - name: start_time
+        description: "datetime (UTC) of start of half hour period in which data was read."
+        data_tests:
+          - not_null
+
+      - name: created_datetime
+        description: "The timestamp when the record was generated/published."
+        data_tests:
+          - not_null
+      
+      # settlement date and period not necessary for UTC settlement_period derivation in this case i.e not critical
+      - name: settlement_date
+        description: "date (GMT / BST) of settlement period."
+        data_tests:
+          - not_null:
+              config:
+                severity: warn
+        
+      - name: settlement_period
+        description: "numbered settlement period within a day (1 - 50) where period 1 is 00:00 - 00:30 (GMT / BST)."
+        data_tests:
+          - not_null:
+              config:
+                severity: warn
+
+      - name: system_buy_price
+        description: "The price (£/MWh) paid by participants who were short (consumed more electricity than contracted)."
+        data_tests:
+          - not_null
+
+      - name: system_sell_price
+        description: "The price (£/MWh) received by participants who were long (generated or consumed less than contracted)."
+        data_tests:
+          - not_null
+
+      - name: net_imbalance_volume
+        description: "The overall net imbalance (MWh) of the electricity system during this settlement period."
+        data_tests:
+          - not_null
+
+
+  - name: stg_elexon_market_index
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - ingested_at
+              - start_time
+              - data_provider
+    
+    columns:
+      - name: ingested_at
+        description: "datetime (UTC) of original ingestion from endpoint."
+        data_tests:
+          - not_null
+  
+      - name: start_time
+        description: "datetime (UTC) of start of half hour period in which data was read."
+        data_tests:
+          - not_null
+      
+      # settlement date and period not necessary for UTC settlement_period derivation in this case i.e not critical
+      - name: settlement_date
+        description: "date (GMT / BST) of settlement period."
+        data_tests:
+          - not_null:
+              config:
+                severity: warn
+        
+      - name: settlement_period
+        description: "numbered settlement period within a day (1 - 50) where period 1 is 00:00 - 00:30 (GMT / BST)."
+        data_tests:
+          - not_null:
+              config:
+                severity: warn
+
+      # NOTE: N2EXMIDP results in 0.0 price and volume
+      - name: data_provider
+        description: "Identifiers for source of data: Nord Pool UK (N2EX) and APX Electricity Exchange (APX)."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['N2EXMIDP','APXMIDP']
+
+
+      - name: price
+        description: "The market price (£/MWh) for the period."
+        data_tests:
+          - not_null
+
+      - name: volume
+        description: "The total traded volume (MWh) used to calculate the price."
+        data_tests:
+          - not_null
