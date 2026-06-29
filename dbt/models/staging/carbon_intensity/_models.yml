@@ -28,6 +28,20 @@ models:
         data_tests:
           - not_null
 
+      - name: settlement_date
+        description: "date (UTC) of settlement period."
+        data_tests:
+          - not_null
+        
+      - name: settlement_period
+        description: "numbered settlement period within a day (1 - 48) where period 1 is 00:00 - 00:30 (UTC)."
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                max_value: 48
+
       - name: region_id
         description: "identifier of region"
         data_tests:
@@ -73,6 +87,20 @@ models:
         description: "datetime (UTC) of end of half hour period in which data was read"
         data_tests:
           - not_null
+
+      - name: settlement_date
+        description: "date (UTC) of settlement period."
+        data_tests:
+          - not_null
+        
+      - name: settlement_period
+        description: "numbered settlement period within a day (1 - 48) where period 1 is 00:00 - 00:30 (UTC)."
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                max_value: 48
 
       - name: region_id
         description: "identifier of region"
@@ -136,6 +164,20 @@ models:
         description: "datetime (UTC) of end of half hour period in which data was read"
         data_tests:
           - not_null
+
+      - name: settlement_date
+        description: "date (UTC) of settlement period."
+        data_tests:
+          - not_null
+        
+      - name: settlement_period
+        description: "numbered settlement period within a day (1 - 48) where period 1 is 00:00 - 00:30 (UTC)."
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                max_value: 48
     
       - name: fuel
         description: "type of fuel"
@@ -176,6 +218,20 @@ models:
         description: "datetime (UTC) of end of half hour period in which data was read"
         data_tests:
           - not_null
+
+      - name: settlement_date
+        description: "date (UTC) of settlement period."
+        data_tests:
+          - not_null
+        
+      - name: settlement_period
+        description: "numbered settlement period within a day (1 - 48) where period 1 is 00:00 - 00:30 (UTC)."
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                max_value: 48
 
       - name: intensity_index
         description: "plaintext representing severity of carbon intensity (from very low to very high)"

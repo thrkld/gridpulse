@@ -14,6 +14,10 @@ select
     ingested_at,
     start_time,
     end_time,
+    (start_time AT TIME ZONE 'UTC')::date as settlement_date,
+      extract(hour   from start_time AT TIME ZONE 'UTC')::int * 2
+    + extract(minute from start_time AT TIME ZONE 'UTC')::int / 30
+    + 1 as settlement_period,
     (region ->> 'regionid')::int as region_id,
     region ->> 'dnoregion' as region_name,
     region ->> 'shortname' as region_shortname,
