@@ -1,5 +1,4 @@
-
-from src.gridpulse.utility.settlement_period import (carbon_elexon_dim,neso_dim)
+from gridpulse.utility.settlement_period import (carbon_elexon_dim,neso_dim)
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 import pytest
