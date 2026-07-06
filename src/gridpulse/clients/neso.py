@@ -1,5 +1,6 @@
 import requests
-from datetime import timezone,datetime
+from datetime import timezone, datetime
+
 
 # Ingestion of demand data from NESO
 def fetch_neso() -> dict:
@@ -11,10 +12,7 @@ def fetch_neso() -> dict:
     r = requests.get(
         "https://api.neso.energy/api/3/action/datastore_search_sql",
         params={"sql": sql},
-        timeout=30
+        timeout=30,
     )
     r.raise_for_status()
-    return {
-        "ingested_utc" : datetime.now(timezone.utc).isoformat(),
-        "payload" : r.json()
-    }
+    return {"ingested_utc": datetime.now(timezone.utc).isoformat(), "payload": r.json()}
