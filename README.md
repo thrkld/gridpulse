@@ -41,6 +41,7 @@ Sources keep revising data after publication, so past periods are re-fetched
 until they settle. Every fetch lands as a new append-only snapshot; marts
 resolve to the latest value per settlement period, which makes all sweeps and
 backfills safe to re-run.
+
 ## Running it
 
 Requires Docker and Python 3.12+.
@@ -86,3 +87,16 @@ cd dbt && dbt build
 - [ ] Dashboard; demand/price forecast consumer
 
 Operational history is logged in `docs/incidents.md` once unattended runs begin.
+
+## Attribution & licences
+
+- **Elexon** — Contains BMRS data © Elexon Limited copyright and database right 2026.
+  Licensed under the [BMRS data licence](https://www.elexon.co.uk/bsc/data/balancing-mechanism-reporting-agent/copyright-licence-bmrs-data/).
+- **Carbon Intensity API** — data provided by the National Energy System Operator
+  via the [Carbon Intensity API](https://carbonintensity.org.uk/), licensed under
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- **NESO** — Supported by National Energy SO Open Data, under the
+  [NESO Open Licence](https://www.neso.energy/data-portal/neso-open-licence).
+
+The licences above apply to the ingested data; the code in this repository is
+licensed under the [MIT License](LICENSE).
