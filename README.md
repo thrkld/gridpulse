@@ -50,7 +50,7 @@ Requires Docker and Python 3.12+.
 git clone https://github.com/thrkld/gridpulse && cd gridpulse
 
 # database
-cp .env.example .env          # set POSTGRES_PASSWORD
+cp .env.example .env # set POSTGRES_PASSWORD
 docker compose up -d
 docker exec -i gridpulse-postgres-1 psql -U gridpulse -d gridpulse < sql/raw_tables.sql
 
