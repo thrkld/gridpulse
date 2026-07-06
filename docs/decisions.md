@@ -9,7 +9,7 @@ Format: what was decided, why, what was rejected, and current status. Status is 
 
 Load untouched API responses directly into postgres as JSONB first; all transformation happens afterwards in dbt/SQL.
 
-**Why:** Keeps ingestion lossless and fully repayable. Any transformation logic can be re-derived from raw history without re-ingestion.
+**Why:** Keeps ingestion lossless and fully replayable. Any transformation logic can be re-derived from raw history without re-ingestion.
 
 **Rejected:** ETL (transforming in Python before load), which would permanently discard source fidelity.
 
@@ -17,13 +17,13 @@ Load untouched API responses directly into postgres as JSONB first; all transfor
 
 ### Append-only raw layer with idempotent ingestion
 
-No overwriting raw tables: append-only, meaning re-running ingestion inserts new records rather than modifying existing one.
+No overwriting raw tables: append-only, meaning re-running ingestion inserts new records rather than modifying existing ones.
 
 **Why:** Makes ingestion safe to retry and preserves full historical revisions (e.g forecast updates over time).
 
 **Rejected:** UPSERT/ON CONFLICT updates in raw tables, which would destroy historical revisions and make ingestion order-dependent.
 
-**Status** partial (raw layer implemented; mart-side dedup planned).
+**Status:** partial (raw layer implemented; mart-side dedup planned).
 
 ### UTC as the canonical settlement-time model
 
@@ -39,7 +39,7 @@ All sources are normalised to a UTC half-hour timeline. `start_time` (UTC instan
 
 No cross-source joining within staging tables. Staging serves as cleaning and standardising jsonb data pre-mart processing
 
-**Why:** Keeps staging models independently testable and prevents cross-soruce logic from contaminating raw transformations.
+**Why:** Keeps staging models independently testable and prevents cross-source logic from contaminating raw transformations.
 
 **Rejected:** Performing joins in staging, which couples datasets and makes validation harder.
 

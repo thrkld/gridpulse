@@ -21,7 +21,7 @@ The premise: a small pipeline, run with production discipline. The interesting p
 - **Staging** - one dbt view per source endpoint: unpack the JSON, rename to snake_case, type the columns, and derive UTC settlement fields. No joins, no business logic.
 - **Marts** *(in progress)* - star schema keyed on the UTC half-hour: deduplication to latest-known-value per period, and the cross-source joins that answer the questions above.
 
-# Dealing with different 'clocks'
+## Dealing with different 'clocks'
 
 Carbon Intensity and Elexon publish UTC instants. NESO publishes a *local* settlement date and period number, meaning 46 periods on the spring clock change and 50 in autumn. Joining on local period numbers would smear DST handling across every downstream query.
 
@@ -63,9 +63,11 @@ python -m gridpulse.ingest.run_elexon
 # transformations
 pip install dbt-postgres
 cd dbt && dbt deps && dbt build
+```
+
 dbt expects a gridpulse profile in ~/.dbt/profiles.yml pointing at
 localhost:5432 (dev schema public).
-```
+
 
 ## Testing
 - pytest - settlement-period conversion logic, including the DST edge days where naive implementations silently go wrong.
