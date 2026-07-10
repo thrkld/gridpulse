@@ -62,6 +62,8 @@ Each source has a single raw table. Multiple endpoints are distinguished using a
 | Elexon | Half hourly |
 | Carbon Intensity | Half hourly |
 
-**Why:** Uncertain update times for NESO, large snapshot which updates one time per day with a changing boundary. Elexon and Carbon Intensity API fetches discernable from previous one every 30 minutes
+**Why:** Uncertain update times for NESO, large snapshot which updates one time per day with a changing boundary. Elexon and Carbon Intensity API fetches discernable from previous one every 30 minutes.
+
+**Rejected:** half-hourly NESO polling (48 identical snapshots per day, see probe_findings.md).
 
 **Status:** planned
