@@ -54,3 +54,14 @@ Each source has a single raw table. Multiple endpoints are distinguished using a
 **Rejected:** table-per-endpoint design, which introduces unnecessary schema duplication.
 
 **Status:** implemented
+
+### Fetch times (non-sweeping)
+| API | Frequency |
+| --------- | --- |
+| Neso | 2x per day |
+| Elexon | Half hourly |
+| Carbon Intensity | Half hourly |
+
+**Why:** Uncertain update times for NESO, large snapshot which updates one time per day with a changing boundary. Elexon and Carbon Intensity API fetches discernable from previous one every 30 minutes
+
+**Status:** planned
