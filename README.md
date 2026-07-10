@@ -4,8 +4,6 @@
 
 An ELT pipeline for UK electricity data (carbon intensity, national demand and wholesale/imbalance prices) ingested into Postgres as raw JSON and modelled with dbt.
 
-The premise: a small pipeline, run with production discipline. The interesting problems here are correctness across mismatched sources, surviving unattended operation, and being able to re-run anything safely.
-
 ## What it answers
 
 - When is the greenest and cheapest half-hour of the day and are they the same?
@@ -18,14 +16,12 @@ The premise: a small pipeline, run with production discipline. The interesting p
 ![Architecture Diagram](docs/images/gridpulse%20architecture%20dark.png)
 
 - **Raw** - untouched API responses as JSONB, append-only. Every ingestion is a snapshot; nothing is ever updated or deleted, so re-runs and backfills are trivially safe and forecast revisions are preserved as history.
-- **Staging** - one dbt view per source endpoint: unpack the JSON, rename to snake_case, type the columns, and derive UTC settlement fields. No joins, no business logic.
+- **Staging** - one dbt view per source endpoint: unpack the JSON, reformat and derive UTC settlement fields. No between-table logic.
 - **Marts** *(in progress)* - star schema keyed on the UTC half-hour: deduplication to latest-known-value per period, and the cross-source joins that answer the questions above.
 
 ## Dealing with different 'clocks'
 
-Carbon Intensity and Elexon publish UTC instants. NESO publishes a *local* settlement date and period number, meaning 46 periods on the spring clock change and 50 in autumn. Joining on local period numbers would smear DST handling across every downstream query.
-
-Instead, everything is normalised at staging to a UTC half-hour spine (`start_time` as the universal join key, periods 1–48 defined on the UTC clock). NESO's local periods are converted by turning local midnight into a UTC instant *first*, then adding absolute 30-minute intervals, which is an approach that handles both clock-change days with no special cases. The conversion is implemented in SQL and Python, unit-tested against the 46-period day, the 50-period day, and the BST midnight rollover, and cross-validated against a generated settlement-period dimension table.
+Carbon Intensity and Elexon publish UTC instants. NESO publishes a *local* settlement date and period number, meaning 46 periods on the spring clock change and 50 in autumn. Standardizing to UTC fixes these issues.
 
 Full reasoning for this and every other design choice, including rejected alternatives: [docs/decisions.md](docs/decisions.md).
 
@@ -34,8 +30,10 @@ Full reasoning for this and every other design choice, including rejected altern
 | Source | Data | Initial load | Ongoing | Revision sweep |
 |---|---|---|---|---|
 | [Carbon Intensity API](https://carbonintensity.org.uk/) | gCO₂/kWh, generation mix, national + regional | backfill from 2024-01-01 via date-range endpoints, fetched in ~14-day chunks | every 30 min | daily, trailing 48 h. Actuals land within hours and are stable after a day; regional is forecast-only, so no sweep |
-| [NESO Data Portal](https://www.neso.energy/data-portal) | national demand, embedded generation, interconnector flows | first snapshot ships with ~2 months of history | daily full snapshot | built in: the dataset is a rolling window, so every fetch re-captures the full revision period |
-| [Elexon BMRS](https://bmrs.elexon.co.uk/) | imbalance prices, market index | backfill from 2024-01-01, one call per settlement date | daily | daily trailing 7 days (interim settlement run) and weekly trailing 35 days (initial settlement run); later reconciliation runs are out of scope by design |
+| [NESO Data Portal](https://www.neso.energy/data-portal) | national demand, embedded generation, interconnector flows | first snapshot ships with ~2 months of history | 2x daily full snapshot | built in: the dataset is a rolling window, so every fetch re-captures the full revision period |
+| [Elexon BMRS](https://bmrs.elexon.co.uk/) | imbalance prices, market index | backfill from 2024-01-01, one call per settlement date | every 30 min | daily trailing 7 days (interim settlement run) and weekly trailing 35 days (initial settlement run); later reconciliation runs are out of scope by design |
+
+*Initial load and revision sweeps land with orchestration - unimplemented as of currently*
 
 Sources keep revising data after publication, so past periods are re-fetched
 until they settle. Every fetch lands as a new append-only snapshot; marts
