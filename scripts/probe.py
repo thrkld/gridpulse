@@ -1,18 +1,20 @@
 import time
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from gridpulse.ingest.run_carbon_intensity import run as run_ci
 from gridpulse.ingest.run_elexon import run_imbalance, run_market_index
 from gridpulse.ingest.run_neso import run as run_neso
 
 LOG_FILE = "probe_log.csv"
-TOTAL_RUNS = 48  # one day at half-hourly
+TOTAL_RUNS = 12  # 12 runs from 9pmish for boundary handling
 
 
 def run_elexon():
-    today = date.today()
     now = datetime.now(UTC)
-    run_imbalance(today, today)
+    # Elexon settlement days follow the Europe/London clock
+    today = now.astimezone(ZoneInfo("Europe/London")).date()
+    run_imbalance(today - timedelta(days=1), today)
     run_market_index(now - timedelta(hours=2), now)
 
 
