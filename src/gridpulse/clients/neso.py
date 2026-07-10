@@ -3,7 +3,7 @@ from datetime import timezone, datetime
 
 
 # Ingestion of demand data from NESO
-def fetch_neso() -> dict:
+def fetch_demand_data_update() -> dict:
     sql = """
         SELECT *
         FROM "177f6fa4-ae49-4182-81ea-0c6b35f26ca6"

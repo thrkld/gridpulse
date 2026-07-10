@@ -6,7 +6,7 @@ from gridpulse.clients.carbon_intensity import (
 from gridpulse.ingest.load import insert_raw
 
 
-def run():
+def run_latest():
     for endpoint, fetch in [
         ("generation", fetch_generation_ci),
         ("national", fetch_national_ci),
@@ -20,4 +20,4 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    run_latest()

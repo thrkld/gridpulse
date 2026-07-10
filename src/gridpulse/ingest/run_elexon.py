@@ -1,3 +1,5 @@
+from zoneinfo import ZoneInfo
+
 from gridpulse.clients.elexon import fetch_elexon_imbalance, fetch_elexon_market_index
 from gridpulse.ingest.load import insert_raw
 from datetime import date, datetime, timedelta, UTC
@@ -32,6 +34,13 @@ def run_market_index(from_dt: datetime, to_dt: datetime):
     print(f"inserted market-index between datetimes {from_dt} and {to_dt}")
 
 
+def run_latest():
+    now = datetime.now(UTC)
+    # Elexon settlement days follow the Europe/London clock
+    today = now.astimezone(ZoneInfo("Europe/London")).date()
+    run_imbalance(today - timedelta(days=1), today)
+    run_market_index(now - timedelta(hours=2), now)
+
+
 if __name__ == "__main__":
-    run_imbalance(date.today() - timedelta(days=1), date.today())
-    run_market_index(datetime.now(tz=UTC) - timedelta(days=1), datetime.now(tz=UTC))
+    run_latest()
