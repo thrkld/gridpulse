@@ -25,7 +25,7 @@
 - Anomalies
     N/A
 
-## stg_ci_regional_generational
+## stg_ci_regional_generation
 
 - Latency
     See stg_ci_national
@@ -36,11 +36,16 @@
 ## stg_elexon_imbalance
 
 - Latency
-   skip from ingested_at 10:30pm start time to 12:00am.
+    settlement_date rolls over at 00:00 UK local
 
-   fix: fetch yesterday also, required for UTC/current time split
+    from_date : first start_time maps to 00:00 LOCAL on first day date
 
-## stg_elexon_market_imbalance
+    to_date : last record is safely readable half an hour behind ingestion time, i.e 9:30 end time will be fetchable from 10:00
+
+- Anomalies
+    N/A
+
+## stg_elexon_market_index
 
 - Anomalies
     N2EXMIDP automatically 0, fills up when half hour starts
@@ -51,8 +56,10 @@
 ## stg_neso
 
 - Latency
-    No update observed during the entire probe window (48 snapshots over 27h).
-    Latest actual stayed at start_time 2026-07-07 07:00 UTC throughout; all snapshots identical. Refresh cadence is slower than daily. Probe window too short to measure. Half-hourly ingestion is pointless for this source; daily (or less) is sufficient. Re-probe over several days to find the update time.
+    No update within either probe window; all snapshots identical.
+    Between runs the actuals cutoff advanced 2026-07-07 07:00 UTC -> 2026-07-09 07:00 UTC, and portal last_modified was 08:20 UTC. 
+    Jul 8 refresh never appeared during a full-day watch, so timing is not reliable day to day.
+    Half-hourly ingestion pointless; ingest twice daily - One sweep at 10am, once at 10pm, checking if last_modified is updated.
 
 - Anomalies
     F rows have ND/TSD = 0; demand fields only populated on A rows.
