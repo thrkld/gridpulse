@@ -1,8 +1,13 @@
 from zoneinfo import ZoneInfo
 
 from gridpulse.clients.elexon import fetch_elexon_imbalance, fetch_elexon_market_index
+from gridpulse.ingest.chunking import date_chunks
 from gridpulse.ingest.load import insert_raw
-from datetime import date, datetime, timedelta, UTC
+from datetime import date, datetime, time, timedelta, UTC
+
+SETTLEMENT_TZ = ZoneInfo("Europe/London")
+BACKFILL_START = date(2024, 1, 1)
+MARKET_INDEX_MAX_CHUNK = timedelta(days=7)  # api rejects ranges over ~7 days
 
 
 # Between 2 dates insert imbalance data
@@ -37,9 +42,23 @@ def run_market_index(from_dt: datetime, to_dt: datetime):
 def run_latest():
     now = datetime.now(UTC)
     # Elexon settlement days follow the Europe/London clock
-    today = now.astimezone(ZoneInfo("Europe/London")).date()
+    today = now.astimezone(SETTLEMENT_TZ).date()
     run_imbalance(today - timedelta(days=1), today)
     run_market_index(now - timedelta(hours=2), now)
+
+
+def run_backfill(from_date: date = BACKFILL_START, to_date: date | None = None):
+    to_date = to_date or datetime.now(UTC).astimezone(SETTLEMENT_TZ).date()
+    if from_date > to_date:
+        raise ValueError("from_date must be <= to_date")
+
+    run_imbalance(from_date, to_date)
+
+    # market index covers the same span: London midnight to London midnight
+    span_start = datetime.combine(from_date, time.min, tzinfo=SETTLEMENT_TZ)
+    span_end = datetime.combine(to_date + timedelta(days=1), time.min, tzinfo=SETTLEMENT_TZ)
+    for start, end in date_chunks(span_start, span_end, MARKET_INDEX_MAX_CHUNK):
+        run_market_index(start, end)
 
 
 if __name__ == "__main__":
