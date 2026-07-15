@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, UTC
 
 BACKFILL_START = datetime(2024, 1, 1, tzinfo=UTC)
 MAX_CHUNK = timedelta(days=14)  # api limit on date-range endpoints
+SWEEP_WINDOW = timedelta(hours=48)  # actuals are stable after a day
 
 
 def run_latest():
@@ -26,6 +27,21 @@ def run_latest():
             "carbon_intensity_raw", result["ingested_utc"], result["payload"], endpoint
         )
         print(f"inserted {endpoint}")
+
+
+def run_sweep(now: datetime | None = None):
+    now = now or datetime.now(UTC)
+    start = now - SWEEP_WINDOW
+    # regional is forecast-only so revisions never land there; no sweep
+    for endpoint, fetch in [
+        ("generation", fetch_generation_ci_range),
+        ("national", fetch_national_ci_range),
+    ]:
+        result = fetch(start, now)
+        insert_raw(
+            "carbon_intensity_raw", result["ingested_utc"], result["payload"], endpoint
+        )
+        print(f"swept {endpoint} between {start} and {now}")
 
 
 def run_backfill(from_dt: datetime = BACKFILL_START, to_dt: datetime | None = None):
