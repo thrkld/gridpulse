@@ -25,7 +25,9 @@ def recorded(monkeypatch):
 
 def test_every_settlement_date_requested_once(recorded):
     run_backfill(date(2024, 1, 1), date(2024, 1, 10))
-    assert recorded["imbalance"] == [date(2024, 1, 1) + timedelta(days=n) for n in range(10)]
+    assert recorded["imbalance"] == [
+        date(2024, 1, 1) + timedelta(days=n) for n in range(10)
+    ]
 
 
 def test_market_index_chunks_cover_span_without_gaps(recorded):

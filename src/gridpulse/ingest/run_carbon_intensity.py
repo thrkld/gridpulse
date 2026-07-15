@@ -27,6 +27,7 @@ def run_latest():
         )
         print(f"inserted {endpoint}")
 
+
 def run_backfill(from_dt: datetime = BACKFILL_START, to_dt: datetime | None = None):
     to_dt = to_dt or datetime.now(UTC)
     for endpoint, fetch in [
@@ -37,9 +38,13 @@ def run_backfill(from_dt: datetime = BACKFILL_START, to_dt: datetime | None = No
         for start, end in date_chunks(from_dt, to_dt, MAX_CHUNK):
             result = fetch(start, end)
             insert_raw(
-                "carbon_intensity_raw", result["ingested_utc"], result["payload"], endpoint
+                "carbon_intensity_raw",
+                result["ingested_utc"],
+                result["payload"],
+                endpoint,
             )
             print(f"inserted {endpoint} between {start} and {end}")
+
 
 if __name__ == "__main__":
     run_latest()
