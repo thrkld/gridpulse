@@ -8,6 +8,8 @@ from datetime import date, datetime, time, timedelta, UTC
 SETTLEMENT_TZ = ZoneInfo("Europe/London")
 BACKFILL_START = date(2024, 1, 1)
 MARKET_INDEX_MAX_CHUNK = timedelta(days=7)  # api rejects ranges over ~7 days
+INTERIM_SWEEP = timedelta(days=7)
+INITIAL_SWEEP = timedelta(days=35)
 
 
 # Between 2 dates insert imbalance data
@@ -45,6 +47,18 @@ def run_latest():
     today = now.astimezone(SETTLEMENT_TZ).date()
     run_imbalance(today - timedelta(days=1), today)
     run_market_index(now - timedelta(hours=2), now)
+
+
+def run_sweep_interim(today: date | None = None):
+    # daily: interim settlement run revises the trailing 7 days
+    today = today or datetime.now(UTC).astimezone(SETTLEMENT_TZ).date()
+    run_imbalance(today - INTERIM_SWEEP, today)
+
+
+def run_sweep_initial(today: date | None = None):
+    # weekly: initial settlement run revises the trailing 35 days
+    today = today or datetime.now(UTC).astimezone(SETTLEMENT_TZ).date()
+    run_imbalance(today - INITIAL_SWEEP, today)
 
 
 def run_backfill(from_date: date = BACKFILL_START, to_date: date | None = None):
