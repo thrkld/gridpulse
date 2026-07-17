@@ -21,3 +21,7 @@ logs/
 
 #dagster
 .tmp_dagster_home_*/
+
+# probe run artifacts (results live in docs/)
+/probe.out
+/probe_log.csv
