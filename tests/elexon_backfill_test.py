@@ -24,6 +24,7 @@ def recorded(monkeypatch):
 
 
 def test_every_settlement_date_requested_once(recorded):
+    """Backfill fetches each settlement date in the range exactly once, in order."""
     run_backfill(date(2024, 1, 1), date(2024, 1, 10))
     assert recorded["imbalance"] == [
         date(2024, 1, 1) + timedelta(days=n) for n in range(10)
@@ -31,6 +32,7 @@ def test_every_settlement_date_requested_once(recorded):
 
 
 def test_market_index_chunks_cover_span_without_gaps(recorded):
+    """Market index chunks are contiguous and each within the 7-day api limit."""
     run_backfill(date(2024, 1, 1), date(2024, 1, 31))
     chunks = recorded["market_index"]
     for (_, prev_end), (next_start, _) in zip(chunks, chunks[1:]):
@@ -39,7 +41,7 @@ def test_market_index_chunks_cover_span_without_gaps(recorded):
 
 
 def test_market_index_span_is_london_midnight_to_midnight(recorded):
-    # 2024-06-01 is BST: London midnight = 23:00 UTC the previous day
+    """On a BST day the span runs London midnight to midnight, i.e. 23:00Z to 23:00Z."""
     run_backfill(date(2024, 6, 1), date(2024, 6, 7))
     first_start = recorded["market_index"][0][0]
     last_end = recorded["market_index"][-1][1]
@@ -48,6 +50,7 @@ def test_market_index_span_is_london_midnight_to_midnight(recorded):
 
 
 def test_market_index_datetimes_are_timezone_aware(recorded):
+    """Every market index request datetime carries a timezone."""
     run_backfill(date(2024, 1, 1), date(2024, 1, 3))
     assert all(
         start.tzinfo is not None and end.tzinfo is not None
@@ -56,6 +59,7 @@ def test_market_index_datetimes_are_timezone_aware(recorded):
 
 
 def test_rejects_reversed_range(recorded):
+    """A from_date after to_date raises before any fetch happens."""
     with pytest.raises(ValueError):
         run_backfill(date(2024, 1, 10), date(2024, 1, 1))
     assert recorded["imbalance"] == []
