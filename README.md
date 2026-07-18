@@ -53,13 +53,16 @@ docker compose up -d
 docker exec -i gridpulse-postgres-1 psql -U gridpulse -d gridpulse < sql/raw_tables.sql
 
 # ingestion
-pip install -e .
+pip install -r requirements.txt -e .
 python -m gridpulse.ingest.run_carbon_intensity
 python -m gridpulse.ingest.run_neso
 python -m gridpulse.ingest.run_elexon
 
+# orchestration (schedules the above per the data sources table)
+dagster dev -f src/gridpulse/orchestration/definitions.py -p 3001
+
 # transformations
-pip install dbt-postgres
+pip install -r requirements-dbt.txt
 cd dbt && dbt deps && dbt build
 ```
 

@@ -6,6 +6,8 @@ dependencies = [
     "requests",
     "psycopg[binary]",
     "python-dotenv",
+    "dagster",
+    "tzdata",
 ]
 
 [build-system]
