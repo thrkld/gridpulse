@@ -6,7 +6,7 @@ from gridpulse.ingest.run_elexon import run_latest as run_elexon
 from gridpulse.ingest.run_neso import run_latest as run_neso
 
 LOG_FILE = "probe_log.csv"
-TOTAL_RUNS = 12  # 12 runs from 9pmish for boundary handling
+TOTAL_RUNS = 48  # one day at half-hourly
 
 
 def log(source: str, status: str, duration_s: float, error: str = ""):
