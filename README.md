@@ -71,11 +71,11 @@ localhost:5432 (dev schema public).
 
 
 ## Testing
-- pytest - settlement-period conversion logic, including the DST edge days where naive implementations silently go wrong.
+- pytest - settlement-period conversion (including DST edge days), backfill chunking and date coverage, and sweep windows.
 - dbt - ~100 schema tests across staging: grain uniqueness per model, null constraints with severity matched to how load-bearing each column is, accepted ranges and values.
-- CI - pytest on every push and pull request.
+- CI - pytest and ruff (format + lint) on every push and pull request.
 ```
-pytest
+make check # See 'Makefile' for specific format of tests
 cd dbt && dbt build
 ```
 
@@ -83,8 +83,10 @@ cd dbt && dbt build
 - [X] Ingestion for all three sources (6 endpoints), raw JSONB layer
 - [X] dbt staging models with UTC settlement normalisation + test suite
 - [X] Settlement-period dimension spine, DST unit tests, CI (pytest)
+- [X] Backfill + revision sweeps for CI and Elexon (first execution at cloud deploy)
+- [X] Local Dagster orchestration: ingestion assets + schedules
+- [ ] Cloud deployment: hosted Postgres, initial load, unattended scheduled runs
 - [ ] Ingestion hardening: retries, response validation, run audit table
-- [ ] Orchestration (Dagster) and scheduled unattended runs
 - [ ] Marts: star schema, latest-value dedup, cross-source joins
 - [ ] CI running the full dbt build against ephemeral Postgres
 - [ ] Dashboard; demand/price forecast consumer
