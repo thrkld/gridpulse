@@ -4,3 +4,5 @@ pytest==9.0.3
 requests==2.34.2
 ruff==0.15.20
 tzdata
+dagster==1.13.13
+dagster-webserver==1.13.13
