@@ -33,7 +33,7 @@ Full reasoning for this and every other design choice, including rejected altern
 | [NESO Data Portal](https://www.neso.energy/data-portal) | national demand, embedded generation, interconnector flows | first snapshot ships with ~2 months of history | 2x daily full snapshot | built in: the dataset is a rolling window, so every fetch re-captures the full revision period |
 | [Elexon BMRS](https://bmrs.elexon.co.uk/) | imbalance prices, market index | backfill from 2024-01-01, one call per settlement date | every 30 min | daily trailing 7 days (interim settlement run) and weekly trailing 35 days (initial settlement run); later reconciliation runs are out of scope by design |
 
-*Initial load and revision sweeps land with orchestration - unimplemented as of currently*
+*Initial load and revision sweeps are implemented and tested; their first execution will land with cloud deployment.*
 
 Sources keep revising data after publication, so past periods are re-fetched
 until they settle. Every fetch lands as a new append-only snapshot; marts
