@@ -69,10 +69,13 @@ def run_backfill(from_date: date = BACKFILL_START, to_date: date | None = None):
     run_imbalance(from_date, to_date)
 
     # market index covers the same span: London midnight to London midnight
-    span_start = datetime.combine(from_date, time.min, tzinfo=SETTLEMENT_TZ)
+    span_start = datetime.combine(from_date, time.min, tzinfo=SETTLEMENT_TZ).astimezone(
+        UTC
+    )
     span_end = datetime.combine(
         to_date + timedelta(days=1), time.min, tzinfo=SETTLEMENT_TZ
-    )
+    ).astimezone(UTC)
+
     for start, end in date_chunks(span_start, span_end, MARKET_INDEX_MAX_CHUNK):
         run_market_index(start, end)
 
