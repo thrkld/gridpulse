@@ -1,4 +1,4 @@
-import requests
+from gridpulse.clients.http import get_with_retry
 from datetime import datetime, timezone
 
 headers = {"Accept": "application/json"}
@@ -10,10 +10,7 @@ def fmt(dt):
 
 # Ingests a single instance of the raw regional, national or generation data for carbon intensity
 def fetch_regional_ci() -> dict:
-    r = requests.get(
-        "https://api.carbonintensity.org.uk/regional", headers=headers, timeout=30
-    )
-    r.raise_for_status()
+    r = get_with_retry("https://api.carbonintensity.org.uk/regional", headers=headers)
     return {"ingested_utc": datetime.now(timezone.utc).isoformat(), "payload": r.json()}
 
 
@@ -23,20 +20,15 @@ def fetch_regional_ci_range(from_dt: datetime, to_dt: datetime) -> dict:
     if from_dt > to_dt:
         raise ValueError("from_dt must be <= to_dt")
     period = f"{fmt(from_dt)}/{fmt(to_dt)}"
-    r = requests.get(
+    r = get_with_retry(
         f"https://api.carbonintensity.org.uk/regional/intensity/{period}",
         headers=headers,
-        timeout=30,
     )
-    r.raise_for_status()
     return {"ingested_utc": datetime.now(timezone.utc).isoformat(), "payload": r.json()}
 
 
 def fetch_national_ci() -> dict:
-    n = requests.get(
-        "https://api.carbonintensity.org.uk/intensity", headers=headers, timeout=30
-    )
-    n.raise_for_status()
+    n = get_with_retry("https://api.carbonintensity.org.uk/intensity", headers=headers)
     return {"ingested_utc": datetime.now(timezone.utc).isoformat(), "payload": n.json()}
 
 
@@ -46,20 +38,14 @@ def fetch_national_ci_range(from_dt: datetime, to_dt: datetime) -> dict:
     if from_dt > to_dt:
         raise ValueError("from_dt must be <= to_dt")
     period = f"{fmt(from_dt)}/{fmt(to_dt)}"
-    n = requests.get(
-        f"https://api.carbonintensity.org.uk/intensity/{period}",
-        headers=headers,
-        timeout=30,
+    n = get_with_retry(
+        f"https://api.carbonintensity.org.uk/intensity/{period}", headers=headers
     )
-    n.raise_for_status()
     return {"ingested_utc": datetime.now(timezone.utc).isoformat(), "payload": n.json()}
 
 
 def fetch_generation_ci() -> dict:
-    g = requests.get(
-        "https://api.carbonintensity.org.uk/generation", headers=headers, timeout=30
-    )
-    g.raise_for_status()
+    g = get_with_retry("https://api.carbonintensity.org.uk/generation", headers=headers)
     return {"ingested_utc": datetime.now(timezone.utc).isoformat(), "payload": g.json()}
 
 
@@ -69,10 +55,7 @@ def fetch_generation_ci_range(from_dt: datetime, to_dt: datetime) -> dict:
     if from_dt > to_dt:
         raise ValueError("from_dt must be <= to_dt")
     period = f"{fmt(from_dt)}/{fmt(to_dt)}"
-    n = requests.get(
-        f"https://api.carbonintensity.org.uk/generation/{period}",
-        headers=headers,
-        timeout=30,
+    n = get_with_retry(
+        f"https://api.carbonintensity.org.uk/generation/{period}", headers=headers
     )
-    n.raise_for_status()
     return {"ingested_utc": datetime.now(timezone.utc).isoformat(), "payload": n.json()}
