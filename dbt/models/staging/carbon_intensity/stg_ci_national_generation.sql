@@ -1,12 +1,21 @@
-with generations as (
+with normalised as (
     select
         ingested_at,
-        (payload -> 'data' ->> 'from')::timestamptz as start_time,
-        (payload -> 'data' ->> 'to')::timestamptz as end_time,
-        generation_mix
-    from {{ source('gridpulse','carbon_intensity_raw') }},
-        jsonb_array_elements(payload -> 'data' ->'generationmix') as generation_mix
+        case when jsonb_typeof(payload -> 'data') = 'array'
+             then payload -> 'data'
+             else jsonb_build_array(payload -> 'data') end as data_array
+    from {{ source('gridpulse','carbon_intensity_raw') }}
     where endpoint = 'generation'
+),
+generations as (
+    select
+        ingested_at,
+        (elem ->> 'from')::timestamptz as start_time,
+        (elem ->> 'to')::timestamptz as end_time,
+        generation_mix
+    from normalised,
+        jsonb_array_elements(data_array) as elem,
+        jsonb_array_elements(elem -> 'generationmix') as generation_mix
 )
 select
     ingested_at,
