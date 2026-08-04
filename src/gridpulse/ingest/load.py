@@ -7,12 +7,18 @@ load_dotenv()
 
 
 def get_connection():
+    # Deployment platforms inject a full DATABASE_URL; use it if present.
+    url = os.environ.get("DATABASE_URL")
+    if url:
+        return psycopg.connect(url)
+    # Otherwise assemble from individual vars, defaulting to local Docker.
     return psycopg.connect(
-        host="localhost",
-        port=5432,
-        dbname="gridpulse",
-        user="gridpulse",
-        password=os.environ["POSTGRES_PASSWORD"],
+        host=os.environ.get("PGHOST", "localhost"),
+        port=int(os.environ.get("PGPORT", "5432")),
+        dbname=os.environ.get("PGDATABASE", "gridpulse"),
+        user=os.environ.get("PGUSER", "gridpulse"),
+        password=os.environ.get("PGPASSWORD") or os.environ["POSTGRES_PASSWORD"],
+        sslmode=os.environ.get("PGSSLMODE", "prefer"),
     )
 
 
