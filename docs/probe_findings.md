@@ -1,6 +1,7 @@
-# Findings
+# Source findings
 
-## stg_ci_national
+## Publication timing (July 2026 half-hourly probe)
+### stg_ci_national
 
 - Latency
     Ingestion time maps to last entire snapshot as would expect
@@ -9,7 +10,7 @@
 - Anomalies
     Intensity Actual had an empty value in one instance
 
-## stg_ci_national_generation
+### stg_ci_national_generation
 
 - Latency
     See stg_ci_national
@@ -17,7 +18,7 @@
 - Anomalies
     N/A
 
-## stg_ci_regional
+### stg_ci_regional
 
 - Latency
     See stg_ci_national
@@ -25,7 +26,7 @@
 - Anomalies
     N/A
 
-## stg_ci_regional_generation
+### stg_ci_regional_generation
 
 - Latency
     See stg_ci_national
@@ -33,7 +34,7 @@
 - Anomalies
     N/A
 
-## stg_elexon_imbalance
+### stg_elexon_imbalance
 
 - Latency
     settlement_date rolls over at 00:00 UK local
@@ -45,7 +46,7 @@
 - Anomalies
     N/A
 
-## stg_elexon_market_index
+### stg_elexon_market_index
 
 - Anomalies
     N2EXMIDP automatically 0, fills up when half hour starts
@@ -53,7 +54,7 @@
 - Latency
     end time maps as stg_ci_national for APXMIDP, fills up once end_time has passed
 
-## stg_neso
+### stg_neso
 
 - Latency
     No update within either probe window; all snapshots identical.
@@ -66,3 +67,14 @@
     Full-snapshot endpoint: ~2,100 records per call, so staging holds 48 duplicate copies (~102k rows) needs mart-side dedup.
     One read timeout (30s) on 2026-07-07 18:00 UTC probe.
     Stray manual ingest from 2026-06-21 present in neso_raw.
+
+## Backfill findings (August 2026)
+### Carbon Intensity
+- /generation returns `data` as an object for the single endpoint but an array for the ranged one.
+- Regional range endpoint rejects 14 days (400); national/generation accept 14
+- Forecast gaps: 2025-01-12/13 (27 periods), 2025-08-10/11 (18)
+- Occasional transient 500s on valid requests
+
+### Elexon
+- market-index rejects ranges >7 days (400)
+- Chunk boundaries are inclusive therefore consecutive chunks duplicate one period
