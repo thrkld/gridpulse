@@ -12,6 +12,7 @@ models:
       - name: ingested_at
         description: "datetime (UTC) of original ingestion from source."
         data_tests:
+          - dbt_utils.at_least_one
           - not_null
 
       - name: start_time
