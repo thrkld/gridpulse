@@ -1,3 +1,4 @@
+import certifi
 import psycopg
 import os
 import json
@@ -12,14 +13,19 @@ def get_connection():
     if url:
         return psycopg.connect(url)
     # Otherwise assemble from individual vars, defaulting to local Docker.
-    return psycopg.connect(
+    sslmode = os.environ.get("PGSSLMODE", "prefer")
+    conn_args = dict(
         host=os.environ.get("PGHOST", "localhost"),
         port=int(os.environ.get("PGPORT", "5432")),
         dbname=os.environ.get("PGDATABASE", "gridpulse"),
         user=os.environ.get("PGUSER", "gridpulse"),
         password=os.environ.get("PGPASSWORD") or os.environ["POSTGRES_PASSWORD"],
-        sslmode=os.environ.get("PGSSLMODE", "prefer"),
+        sslmode=sslmode,
     )
+    # verify-* modes need a CA bundle; libpq's default path does not exist here
+    if sslmode.startswith("verify"):
+        conn_args["sslrootcert"] = os.environ.get("PGSSLROOTCERT", certifi.where())
+    return psycopg.connect(**conn_args)
 
 
 def insert_raw(

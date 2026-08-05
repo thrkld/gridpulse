@@ -1,0 +1,16 @@
+storage:
+  postgres:
+    postgres_db:
+      username:
+        env: DAGSTER_PG_USER
+      password:
+        env: DAGSTER_PG_PASSWORD
+      hostname:
+        env: DAGSTER_PG_HOST
+      db_name:
+        env: DAGSTER_PG_DB
+      port: 5432
+      params:
+        sslmode: verify-full
+        sslrootcert: /etc/ssl/certs/ca-certificates.crt
+

@@ -1,0 +1,16 @@
+services:
+  webserver:
+    build: ..
+    image: gridpulse-dagster
+    command: dagster-webserver -h 0.0.0.0 -p 3000 -m gridpulse.orchestration.definitions
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file: ../.env
+    restart: unless-stopped
+
+  daemon:
+    build: ..
+    image: gridpulse-dagster
+    command: dagster-daemon run -m gridpulse.orchestration.definitions
+    env_file: ../.env
+    restart: unless-stopped

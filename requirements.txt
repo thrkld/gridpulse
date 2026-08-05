@@ -1,3 +1,4 @@
+certifi==2026.5.20
 psycopg[binary]==3.3.4
 python-dotenv==1.2.2
 pytest==9.0.3
@@ -6,3 +7,4 @@ ruff==0.15.20
 tzdata
 dagster==1.13.13
 dagster-webserver==1.13.13
+dagster-postgres==0.29.13
