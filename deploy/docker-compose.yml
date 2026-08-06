@@ -9,8 +9,10 @@ services:
     restart: unless-stopped
 
   daemon:
-    build: ..
     image: gridpulse-dagster
+    depends_on:
+      - webserver
     command: dagster-daemon run -m gridpulse.orchestration.definitions
     env_file: ../.env
     restart: unless-stopped
+
