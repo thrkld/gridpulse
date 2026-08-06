@@ -19,6 +19,12 @@ An ELT pipeline for UK electricity data (carbon intensity, national demand and w
 - **Staging** - one dbt view per source endpoint: unpack the JSON, reformat and derive UTC settlement fields. No between-table logic.
 - **Marts** *(in progress)* - star schema keyed on the UTC half-hour: deduplication to latest-known-value per period, and the cross-source joins that answer the questions above.
 
+## Where it runs
+
+Ingestion runs unattended in the cloud. Dagster schedules the fetches from an Azure VM, and the data lands in an Azure Database for PostgreSQL server in the same region. Dagster keeps its own run and schedule history in a second database on that server, so restarting the containers does not lose it.
+
+The same code runs locally against the Postgres in `docker-compose.yml`, because the connection is read from the environment rather than hardcoded. Operational history since the first scheduled run is in [docs/incidents.md](docs/incidents.md).
+
 ## Dealing with different 'clocks'
 
 Carbon Intensity and Elexon publish UTC instants. NESO publishes a *local* settlement date and period number, meaning 46 periods on the spring clock change and 50 in autumn. Standardizing to UTC fixes these issues.
@@ -91,7 +97,7 @@ cd dbt && dbt build
 - [X] Backfill + revision sweeps for CI and Elexon
 - [X] Local Dagster orchestration: ingestion assets + schedules
 - [X] Cloud Postgres on Azure, historical load complete and validated by the dbt suite
-- [ ] Unattended scheduled runs: Dagster deployed off the laptop
+- [X] Unattended scheduled runs: Dagster deployed on an Azure VM, first scheduled run 2026-08-06
 - [ ] Ingestion hardening: response validation and a run audit table (retries implemented)
 - [ ] Marts: star schema, latest-value dedup, cross-source joins
 - [ ] CI running the full dbt build against ephemeral Postgres
