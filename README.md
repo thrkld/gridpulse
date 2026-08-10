@@ -36,10 +36,10 @@ Full reasoning for this and every other design choice, including rejected altern
 | Source | Data | Initial load | Ongoing | Revision sweep |
 |---|---|---|---|---|
 | [Carbon Intensity API](https://carbonintensity.org.uk/) | gCO₂/kWh, generation mix, national + regional | backfill from 2024-01-01 via date-range endpoints, fetched in ~14-day chunks (regional is 7 days) | every 30 min | daily, trailing 48 h. Actuals land within hours and are stable after a day; regional is forecast-only, so no sweep |
-| [NESO Data Portal](https://www.neso.energy/data-portal) | national demand, embedded generation, interconnector flows | first snapshot ships with ~2 months of history | 2x daily full snapshot | built in: the dataset is a rolling window, so every fetch re-captures the full revision period |
-| [Elexon BMRS](https://bmrs.elexon.co.uk/) | imbalance prices, market index | backfill from 2024-01-01, one call per settlement date | every 30 min | daily trailing 7 days (interim settlement run) and weekly trailing 35 days (initial settlement run); later reconciliation runs are out of scope by design |
+| [NESO Data Portal](https://www.neso.energy/data-portal) | national demand, embedded generation, interconnector flows | one call per year against the historic demand resources, from 2024-01-01 | 2x daily full snapshot | built in: the live feed is a rolling window, so every fetch re-captures the full revision period |
+| [Elexon BMRS](https://bmrs.elexon.co.uk/) | imbalance prices, market index, demand forecast and outturn | backfill from 2024-01-01: one call per settlement date for imbalance and one per day of publications for the forecast | every 30 min | daily trailing 7 days (interim settlement run) and weekly trailing 35 days (initial settlement run); later reconciliation runs are out of scope by design |
 
-*The initial load has been run against the cloud database. Revision sweeps are implemented and tested, but only start running unattended once orchestration is deployed.*
+*The initial load has been run against the cloud database, and the ongoing fetches and revision sweeps run unattended from there. The demand forecast is the exception: its history is still to be loaded, so only recent periods carry one.*
 
 Sources keep revising data after publication, so past periods are re-fetched
 until they settle. Every fetch lands as a new append-only snapshot; marts
@@ -82,8 +82,8 @@ a hosted database add a second output to that profile and run
 
 
 ## Testing
-- pytest - settlement-period conversion (including DST edge days), backfill chunking and date coverage, and sweep windows.
-- dbt - 114 schema tests across staging: grain uniqueness per model, null constraints with severity matched to how load-bearing each column is, accepted ranges and values, and a row count assertion on every model so that an empty one cannot pass by having nothing to check.
+- pytest - settlement-period conversion (including DST edge days), backfill chunking and date coverage, sweep windows, retry behaviour on failed requests, and how the database connection is resolved.
+- dbt - 129 schema tests across staging: grain uniqueness per model, null constraints with severity matched to how load-bearing each column is, accepted ranges and values, and a row count assertion on every model so that an empty one cannot pass by having nothing to check.
 - CI - pytest and ruff (format + lint) on every push and pull request.
 ```
 make check # See 'Makefile' for specific format of tests
@@ -91,7 +91,7 @@ cd dbt && dbt build
 ```
 
 ## Status
-- [X] Ingestion for all three sources (6 endpoints), raw JSONB layer
+- [X] Ingestion for all three sources (8 endpoints), raw JSONB layer
 - [X] dbt staging models with UTC settlement normalisation + test suite
 - [X] Settlement-period dimension spine, DST unit tests, CI (pytest)
 - [X] Backfill + revision sweeps for CI and Elexon

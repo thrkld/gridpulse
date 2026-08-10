@@ -99,6 +99,26 @@ Historical loading is run on demand from `scripts/backfill.py`. Only the latest 
 
 **Status:** implemented.
 
+### Demand forecasts come from Elexon, not NESO
+
+The national demand forecast is taken from Elexon's NDF dataset, alongside the settled outturn from the same publisher. NESO's forecast rows are kept for embedded wind and solar only.
+
+**Why:** NESO publishes a zero in every demand and interconnector column on a forecast row, so there is nothing to compare an actual against. Elexon publishes a real forecast with the time it was published, and republishes it repeatedly as the period approaches, so error can be measured against how far ahead the forecast was made. Taking the outturn from Elexon as well keeps the comparison within one publisher's definition of national demand.
+
+**Rejected:** Treating NESO's forecast rows as a demand forecast, which would report near total error against a literal zero; and Elexon's `/forecast/demand/day-ahead` endpoint, which ignores its date parameters and returns only the most recent publication, so it cannot be backfilled.
+
+**Status:** implemented.
+
+### Demand history comes from NESO's yearly resources
+
+History is loaded once from the historic-demand-data resource for each year. The live feed only keeps the current window up to date.
+
+**Why:** The live feed reaches back to the start of the previous month and no further, so it can never accumulate history behind the point ingestion started. Without the yearly resources, the questions about demand and interconnector flows would have covered five weeks against two and a half years for everything else. The historic resources carry no forecast indicator column at all, so their rows arrive with it null rather than marked settled, which anything reading them has to allow for.
+
+**Rejected:** Letting the live feed accumulate, which would take years to match the other sources and would still hold nothing from before ingestion began.
+
+**Status:** implemented.
+
 ## Deployment
 ### Managed Postgres on Azure, with a planned move
 
