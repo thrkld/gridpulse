@@ -110,3 +110,109 @@ models:
         description: "The total traded volume (MWh) used to calculate the price."
         data_tests:
           - not_null
+
+
+  - name: stg_elexon_demand_forecast
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - ingested_at
+              - start_time
+              - publish_time
+
+    columns:
+      - name: ingested_at
+        description: "datetime (UTC) of original ingestion from endpoint."
+        data_tests:
+          - dbt_utils.at_least_one
+          - not_null
+
+      - name: start_time
+        description: "datetime (UTC) of start of half hour period being forecast."
+        data_tests:
+          - not_null
+
+      # a period is forecast repeatedly, so publish_time is part of the grain
+      - name: publish_time
+        description: "datetime (UTC) the forecast was published by Elexon."
+        data_tests:
+          - not_null
+
+      - name: forecast_lead
+        description: "interval between publication and the period starting. Negative once the period has begun."
+
+      - name: settlement_date
+        description: "date (UTC) of settlement period."
+        data_tests:
+          - not_null
+
+      - name: settlement_period
+        description: "numbered settlement period within a day (1 - 48) where period 1 is 00:00 - 00:30 (UTC)."
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                max_value: 48
+
+      # only the national boundary is published on this dataset
+      - name: boundary
+        description: "Transmission boundary the forecast applies to."
+        data_tests:
+          - not_null
+
+      - name: national_demand_forecast
+        description: "forecast national demand (MW) for the half hour."
+        data_tests:
+          - not_null
+
+
+  - name: stg_elexon_demand_outturn
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - ingested_at
+              - start_time
+
+    columns:
+      - name: ingested_at
+        description: "datetime (UTC) of original ingestion from endpoint."
+        data_tests:
+          - dbt_utils.at_least_one
+          - not_null
+
+      - name: start_time
+        description: "datetime (UTC) of start of half hour period in which demand was measured."
+        data_tests:
+          - not_null
+
+      - name: publish_time
+        description: "datetime (UTC) the outturn was published by Elexon."
+        data_tests:
+          - not_null
+
+      - name: settlement_date
+        description: "date (UTC) of settlement period."
+        data_tests:
+          - not_null
+
+      - name: settlement_period
+        description: "numbered settlement period within a day (1 - 48) where period 1 is 00:00 - 00:30 (UTC)."
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                max_value: 48
+
+      - name: national_demand
+        description: "initial national demand outturn (INDO) in MW, settled."
+        data_tests:
+          - not_null
+
+      - name: transmission_system_demand
+        description: "initial transmission system demand outturn (ITSDO) in MW, settled."
+        data_tests:
+          - not_null

@@ -27,3 +27,31 @@ def fetch_elexon_market_index(from_dt: datetime, to_dt: datetime) -> dict:
         "to_dt": to_str,
         "payload": r.json(),
     }
+
+
+# Given 2 datetimes, fetch every demand forecast published between them (NDF)
+def fetch_elexon_demand_forecast(from_dt: datetime, to_dt: datetime) -> dict:
+    from_str = from_dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
+    to_str = to_dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
+    r = get_with_retry(
+        f"https://data.elexon.co.uk/bmrs/api/v1/datasets/NDF?publishDateTimeFrom={from_str}&publishDateTimeTo={to_str}"
+    )
+    return {
+        "ingested_utc": datetime.now(timezone.utc).isoformat(),
+        "from_dt": from_str,
+        "to_dt": to_str,
+        "payload": r.json(),
+    }
+
+
+# Between 2 dates, fetch settled demand outturn (INDO/ITSDO) for those days
+def fetch_elexon_demand_outturn(from_date: date, to_date: date) -> dict:
+    r = get_with_retry(
+        f"https://data.elexon.co.uk/bmrs/api/v1/demand/outturn?settlementDateFrom={from_date}&settlementDateTo={to_date}"
+    )
+    return {
+        "ingested_utc": datetime.now(timezone.utc).isoformat(),
+        "from_date": str(from_date),
+        "to_date": str(to_date),
+        "payload": r.json(),
+    }

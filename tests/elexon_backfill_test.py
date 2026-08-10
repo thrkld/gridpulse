@@ -2,12 +2,22 @@ import pytest
 from datetime import UTC, date, datetime, timedelta
 
 from gridpulse.ingest import run_elexon
-from gridpulse.ingest.run_elexon import MARKET_INDEX_MAX_CHUNK, run_backfill
+from gridpulse.ingest.run_elexon import (
+    DEMAND_FORECAST_MAX_CHUNK,
+    DEMAND_OUTTURN_MAX_CHUNK,
+    MARKET_INDEX_MAX_CHUNK,
+    run_backfill,
+)
 
 
 @pytest.fixture
 def recorded(monkeypatch):
-    calls = {"imbalance": [], "market_index": []}
+    calls = {
+        "imbalance": [],
+        "market_index": [],
+        "demand_forecast": [],
+        "demand_outturn": [],
+    }
 
     def fake_imbalance(fetch_date):
         calls["imbalance"].append(fetch_date)
@@ -17,8 +27,20 @@ def recorded(monkeypatch):
         calls["market_index"].append((from_dt, to_dt))
         return {"ingested_utc": "", "from_dt": "", "to_dt": "", "payload": {}}
 
+    def fake_demand_forecast(from_dt, to_dt):
+        calls["demand_forecast"].append((from_dt, to_dt))
+        return {"ingested_utc": "", "from_dt": "", "to_dt": "", "payload": {}}
+
+    def fake_demand_outturn(from_date, to_date):
+        calls["demand_outturn"].append((from_date, to_date))
+        return {"ingested_utc": "", "from_date": "", "to_date": "", "payload": {}}
+
     monkeypatch.setattr(run_elexon, "fetch_elexon_imbalance", fake_imbalance)
     monkeypatch.setattr(run_elexon, "fetch_elexon_market_index", fake_market_index)
+    monkeypatch.setattr(
+        run_elexon, "fetch_elexon_demand_forecast", fake_demand_forecast
+    )
+    monkeypatch.setattr(run_elexon, "fetch_elexon_demand_outturn", fake_demand_outturn)
     monkeypatch.setattr(run_elexon, "insert_raw", lambda *a, **k: None)
     return calls
 
@@ -64,3 +86,27 @@ def test_rejects_reversed_range(recorded):
         run_backfill(date(2024, 1, 10), date(2024, 1, 1))
     assert recorded["imbalance"] == []
     assert recorded["market_index"] == []
+
+
+def test_demand_outturn_chunks_cover_span_without_gaps(recorded):
+    """Outturn chunks are contiguous and each within the 28-day api limit."""
+    run_backfill(date(2024, 1, 1), date(2024, 4, 30))
+    chunks = recorded["demand_outturn"]
+    for (_, prev_end), (next_start, _) in zip(chunks, chunks[1:]):
+        assert prev_end == next_start
+    assert all(end - start <= DEMAND_OUTTURN_MAX_CHUNK for start, end in chunks)
+
+
+def test_demand_forecast_is_requested_one_day_at_a_time(recorded):
+    """The NDF endpoint rejects two days of publications, so chunks are single days."""
+    run_backfill(date(2024, 1, 1), date(2024, 1, 10))
+    chunks = recorded["demand_forecast"]
+    assert all(end - start <= DEMAND_FORECAST_MAX_CHUNK for start, end in chunks)
+    for (_, prev_end), (next_start, _) in zip(chunks, chunks[1:]):
+        assert prev_end == next_start
+
+
+def test_backfill_covers_every_endpoint(recorded):
+    """A backfill fetches all four Elexon endpoints, not just the original two."""
+    run_backfill(date(2024, 1, 1), date(2024, 1, 3))
+    assert all(calls for calls in recorded.values())
