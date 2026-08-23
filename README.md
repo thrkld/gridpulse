@@ -2,34 +2,40 @@
 
 [![CI](https://github.com/thrkld/gridpulse/actions/workflows/ci.yml/badge.svg)](https://github.com/thrkld/gridpulse/actions/workflows/ci.yml)
 
-An ELT pipeline for UK electricity data (carbon intensity, national demand and wholesale/imbalance prices) ingested into Postgres as raw JSON and modelled with dbt.
+GridPulse is an ELT pipeline for UK electricity data. It ingests carbon intensity, national demand and wholesale and imbalance prices into Postgres as raw JSON, and then models that data with dbt.
 
 ## What it answers
 
-- When is the greenest and cheapest half-hour of the day and are they the same?
-- How accurate are carbon intensity and demand forecasts once actuals land?
-- How do imbalance prices move with demand and the renewables share?
-- How much of GB demand is met by interconnector imports vs domestic generation?
+- When is the greenest half hour of the day, when is the cheapest, and are they the same one?
+- How accurate do the carbon intensity and demand forecasts turn out to be once the actual figures land?
+- How do imbalance prices move as demand and the renewables share change?
+- How much of GB demand is met by interconnector imports rather than by domestic generation?
+- When does the price of power go negative, and what is the grid doing when it happens?
+- What does being out of balance actually cost, measured against the wholesale price?
+- How much has embedded solar hollowed out midday demand since 2024?
+- How different are the nations' grids from one another?
 
 ## Architecture
 
 ![Architecture Diagram](docs/images/gridpulse%20architecture%20dark.png)
 
-- **Raw** - untouched API responses as JSONB, append-only. Every ingestion is a snapshot; nothing is ever updated or deleted, so re-runs and backfills are trivially safe and forecast revisions are preserved as history.
-- **Staging** - one dbt view per source endpoint: unpack the JSON, reformat and derive UTC settlement fields. No between-table logic.
-- **Marts** *(in progress)* - star schema keyed on the UTC half-hour: deduplication to latest-known-value per period, and the cross-source joins that answer the questions above.
+The **raw** layer stores API responses as JSONB exactly as they arrived, and it is append only. Every ingestion is a snapshot, and nothing is ever updated or deleted, which is what makes re-runs and backfills safe to repeat and what preserves forecast revisions as history rather than overwriting them.
+
+The **staging** layer puts one dbt view over each source endpoint. Those views unpack the JSON, tidy up the types and derive the UTC settlement fields, but they do no logic that spans tables.
+
+The **marts** layer is in progress. It will be six tables keyed on the UTC half hour, which deduplicate each source down to its latest known value and then join the sources together. The reasoning behind that shape, along with the alternatives that were rejected, sits in [docs/decisions.md](docs/decisions.md).
 
 ## Where it runs
 
-Ingestion runs unattended in the cloud. Dagster schedules the fetches from an Azure VM, and the data lands in an Azure Database for PostgreSQL server in the same region. Dagster keeps its own run and schedule history in a second database on that server, so restarting the containers does not lose it.
+Ingestion runs unattended in the cloud. Dagster schedules the fetches from an Azure VM, and the data lands in an Azure Database for PostgreSQL server in the same region. Dagster keeps its own run and schedule history in a second database on that same server, so restarting the containers does not lose any of it.
 
-The same code runs locally against the Postgres in `docker-compose.yml`, because the connection is read from the environment rather than hardcoded. Operational history since the first scheduled run is in [docs/incidents.md](docs/incidents.md).
+The same code also runs locally against the Postgres in `docker-compose.yml`, because the connection details are read from the environment rather than hardcoded. Anything that has gone wrong since the first scheduled run is written down in [docs/incidents.md](docs/incidents.md).
 
 ## Dealing with different 'clocks'
 
-Carbon Intensity and Elexon publish UTC instants. NESO publishes a *local* settlement date and period number, meaning 46 periods on the spring clock change and 50 in autumn. Standardizing to UTC fixes these issues.
+Carbon Intensity and Elexon both publish UTC instants, but NESO publishes a *local* settlement date together with a period number. That means a NESO day has 46 periods when the clocks go forward in spring and 50 when they go back in autumn. Normalising everything to UTC on the way in is what stops those two conventions from colliding.
 
-Full reasoning for this and every other design choice, including rejected alternatives: [docs/decisions.md](docs/decisions.md).
+The reasoning behind this and every other design choice, including the alternatives that were rejected, is in [docs/decisions.md](docs/decisions.md).
 
 ## Data sources
 
@@ -39,12 +45,9 @@ Full reasoning for this and every other design choice, including rejected altern
 | [NESO Data Portal](https://www.neso.energy/data-portal) | national demand, embedded generation, interconnector flows | one call per year against the historic demand resources, from 2024-01-01 | 2x daily full snapshot | built in: the live feed is a rolling window, so every fetch re-captures the full revision period |
 | [Elexon BMRS](https://bmrs.elexon.co.uk/) | imbalance prices, market index, demand forecast and outturn | backfill from 2024-01-01: one call per settlement date for imbalance and one per day of publications for the forecast | every 30 min | daily trailing 7 days (interim settlement run) and weekly trailing 35 days (initial settlement run); later reconciliation runs are out of scope by design |
 
-*The initial load has been run against the cloud database, and the ongoing fetches and revision sweeps run unattended from there. The demand forecast is the exception: its history is still to be loaded, so only recent periods carry one.*
+Every source keeps revising its data after first publishing it, so past periods have to be fetched again until they settle. Each fetch lands as another append-only snapshot, and the marts resolve each settlement period down to its latest value, which is what makes the sweeps and backfills safe to run as many times as you like.
 
-Sources keep revising data after publication, so past periods are re-fetched
-until they settle. Every fetch lands as a new append-only snapshot; marts
-resolve to the latest value per settlement period, which makes all sweeps and
-backfills safe to re-run.
+The demand forecast is worth calling out, because Elexon republishes it roughly 59 times per period as that period approaches. All of those publications are kept rather than only the last one, which is what makes it possible to measure how the forecast improves with less time to run.
 
 ## Running it
 
@@ -75,22 +78,23 @@ pip install -r requirements-dbt.txt
 cd dbt && dbt deps && dbt build
 ```
 
-dbt expects a gridpulse profile in ~/.dbt/profiles.yml pointing at
-localhost:5432 (dev schema public). dbt does not read .env, so to build against
-a hosted database add a second output to that profile and run
-`dbt build --target prod`.
-
+dbt looks for a gridpulse profile in `~/.dbt/profiles.yml` pointing at localhost:5432, using the dev schema `public`. It does not read `.env`, so if you want to build against a hosted database you need to add a second output to that profile and then run `dbt build --target prod`.
 
 ## Testing
-- pytest - settlement-period conversion (including DST edge days), backfill chunking and date coverage, sweep windows, retry behaviour on failed requests, and how the database connection is resolved.
-- dbt - 129 schema tests across staging: grain uniqueness per model, null constraints with severity matched to how load-bearing each column is, accepted ranges and values, and a row count assertion on every model so that an empty one cannot pass by having nothing to check.
-- CI - pytest and ruff (format + lint) on every push and pull request.
+
+**pytest** covers the settlement-period conversion including the days the clocks change, the backfill chunking and the date ranges it produces, the sweep windows, how failed requests are retried, and how the database connection is resolved from the environment.
+
+**dbt** runs 129 schema tests across staging. Those check the grain of each model is unique, that null constraints have a severity matching how load-bearing the column is, that values fall in accepted ranges, and that every model returns at least one row, so a model that has silently gone empty cannot pass by having nothing left to check.
+
+**CI** runs pytest and ruff, both format and lint, on every push and pull request.
+
 ```
 make check # See 'Makefile' for specific format of tests
 cd dbt && dbt build
 ```
 
 ## Status
+
 - [X] Ingestion for all three sources (8 endpoints), raw JSONB layer
 - [X] dbt staging models with UTC settlement normalisation + test suite
 - [X] Settlement-period dimension spine, DST unit tests, CI (pytest)
@@ -98,22 +102,15 @@ cd dbt && dbt build
 - [X] Local Dagster orchestration: ingestion assets + schedules
 - [X] Cloud Postgres on Azure, historical load complete and validated by the dbt suite
 - [X] Unattended scheduled runs: Dagster deployed on an Azure VM, first scheduled run 2026-08-06
+- [ ] Marts: six tables keyed on the UTC half hour, latest-value dedup, cross-source joins
 - [ ] Ingestion hardening: response validation and a run audit table (retries implemented)
-- [ ] Marts: star schema, latest-value dedup, cross-source joins
 - [ ] CI running the full dbt build against ephemeral Postgres
 - [ ] Dashboard; demand/price forecast consumer
 
-Operational history is logged in `docs/incidents.md` once unattended runs begin.
-
 ## Attribution & licences
 
-- **Elexon** — Contains BMRS data © Elexon Limited copyright and database right 2026.
-  Licensed under the [BMRS data licence](https://www.elexon.co.uk/bsc/data/balancing-mechanism-reporting-agent/copyright-licence-bmrs-data/).
-- **Carbon Intensity API** — data provided by the National Energy System Operator
-  via the [Carbon Intensity API](https://carbonintensity.org.uk/), licensed under
-  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
-- **NESO** — Supported by National Energy SO Open Data, under the
-  [NESO Open Licence](https://www.neso.energy/data-portal/neso-open-licence).
+- **Elexon**: contains BMRS data © Elexon Limited copyright and database right 2026, licensed under the [BMRS data licence](https://www.elexon.co.uk/bsc/data/balancing-mechanism-reporting-agent/copyright-licence-bmrs-data/).
+- **Carbon Intensity API**: data provided by the National Energy System Operator via the [Carbon Intensity API](https://carbonintensity.org.uk/), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- **NESO**: supported by National Energy SO Open Data, under the [NESO Open Licence](https://www.neso.energy/data-portal/neso-open-licence).
 
-The licences above apply to the ingested data; the code in this repository is
-licensed under the [MIT License](LICENSE).
+Those licences apply to the ingested data. The code in this repository is licensed under the [MIT License](LICENSE).
