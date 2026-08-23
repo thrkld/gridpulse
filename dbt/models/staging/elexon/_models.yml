@@ -63,6 +63,13 @@ models:
               - ingested_at
               - start_time
               - data_provider
+      # N2EX rows are all zeros by design; an APX row of zeros would mean parsing broke
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "not (price = 0 and volume = 0)"
+          config:
+            severity: warn
+            where: "data_provider = 'APXMIDP'"
     
     columns:
       - name: ingested_at
@@ -114,12 +121,17 @@ models:
 
   - name: stg_elexon_demand_forecast
     data_tests:
+      # A single response repeats some records verbatim (same period, same
+      # publication, same value), so this is the source's habit rather than a
+      # parsing fault. Marts dedup on (start_time, publish_time) regardless.
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns:
               - ingested_at
               - start_time
               - publish_time
+          config:
+            severity: warn
 
     columns:
       - name: ingested_at
@@ -158,9 +170,14 @@ models:
 
       # only the national boundary is published on this dataset
       - name: boundary
-        description: "Transmission boundary the forecast applies to."
+        description: "Transmission boundary the forecast applies to. A second boundary appearing would collide the (start_time, publish_time) grain downstream, so the accepted_values warn is a tripwire."
         data_tests:
           - not_null
+          - accepted_values:
+              arguments:
+                values: ['N']
+              config:
+                severity: warn
 
       - name: national_demand_forecast
         description: "forecast national demand (MW) for the half hour."
@@ -212,7 +229,10 @@ models:
         data_tests:
           - not_null
 
+      # the newest period can carry a demand figure before its transmission one
       - name: transmission_system_demand
-        description: "initial transmission system demand outturn (ITSDO) in MW, settled."
+        description: "initial transmission system demand outturn (ITSDO) in MW, settled. Briefly null on the most recent period, before Elexon publishes it."
         data_tests:
-          - not_null
+          - not_null:
+              config:
+                severity: warn

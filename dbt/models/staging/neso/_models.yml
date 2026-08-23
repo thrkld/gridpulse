@@ -40,9 +40,8 @@ models:
                 max_value: 48
 
       - name: forecast_actual_indicator
-        description: "'A' if the row is settled actual demand, 'F' if still forecast. Flips F to A as the period settles."
+        description: "'A' if the row is settled actual demand, 'F' if still forecast. Flips F to A as the period settles. NULL on rows from the historic yearly resources, which carry no indicator column and are always settled, so downstream comparisons must treat NULL as settled (is distinct from 'F')."
         data_tests:
-          - not_null
           - accepted_values:
               arguments:
                 values: ['A', 'F']
