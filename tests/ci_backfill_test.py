@@ -2,7 +2,7 @@ import pytest
 from datetime import UTC, datetime, timedelta
 
 from gridpulse.ingest import run_carbon_intensity
-from gridpulse.ingest.chunking import date_chunks
+from gridpulse.ingest.chunking import date_chunks, year_bounded_chunks
 from gridpulse.ingest.run_carbon_intensity import (
     MAX_CHUNK,
     REGIONAL_MAX_CHUNK,
@@ -111,3 +111,43 @@ def test_backfill_ranges_are_contiguous(recorded):
         assert ranges[-1][1] == end
         for (_, prev_end), (next_start, _) in zip(ranges, ranges[1:]):
             assert prev_end == next_start
+
+
+def test_no_chunk_straddles_a_year_boundary():
+    """The generation endpoint truncates a range that crosses 1 January."""
+    chunks = year_bounded_chunks(
+        datetime(2024, 6, 1, tzinfo=UTC), datetime(2026, 6, 1, tzinfo=UTC), MAX_CHUNK
+    )
+    assert all(
+        start.year == end.year or end == datetime(end.year, 1, 1, tzinfo=UTC)
+        for start, end in chunks
+    )
+
+
+def test_year_bounded_chunks_still_cover_the_whole_span():
+    """Splitting at the year end must not drop or overlap any time."""
+    start = datetime(2024, 6, 1, tzinfo=UTC)
+    end = datetime(2026, 6, 1, tzinfo=UTC)
+    chunks = year_bounded_chunks(start, end, MAX_CHUNK)
+    assert chunks[0][0] == start
+    assert chunks[-1][1] == end
+    for (_, prev_end), (next_start, _) in zip(chunks, chunks[1:]):
+        assert prev_end == next_start
+
+
+def test_year_bounded_chunks_respect_the_api_limit():
+    """Splitting must not produce a chunk longer than the endpoint allows."""
+    chunks = year_bounded_chunks(
+        datetime(2024, 1, 1, tzinfo=UTC), datetime(2026, 8, 1, tzinfo=UTC), MAX_CHUNK
+    )
+    assert all(end - start <= MAX_CHUNK for start, end in chunks)
+
+
+def test_backfill_uses_year_bounded_chunks(recorded):
+    """A backfill spanning new year must not request a straddling range."""
+    run_backfill(datetime(2024, 12, 20, tzinfo=UTC), datetime(2025, 1, 20, tzinfo=UTC))
+    for ranges in recorded.values():
+        assert all(
+            s.year == e.year or e == datetime(e.year, 1, 1, tzinfo=UTC)
+            for s, e in ranges
+        )

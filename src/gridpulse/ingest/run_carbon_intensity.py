@@ -6,7 +6,7 @@ from gridpulse.clients.carbon_intensity import (
     fetch_regional_ci,
     fetch_regional_ci_range,
 )
-from gridpulse.ingest.chunking import date_chunks
+from gridpulse.ingest.chunking import year_bounded_chunks
 from gridpulse.ingest.load import insert_raw
 
 from datetime import datetime, timedelta, UTC
@@ -52,7 +52,7 @@ def run_backfill(from_dt: datetime = BACKFILL_START, to_dt: datetime | None = No
         ("national", fetch_national_ci_range, MAX_CHUNK),
         ("regional", fetch_regional_ci_range, REGIONAL_MAX_CHUNK),
     ]:
-        for start, end in date_chunks(from_dt, to_dt, chunk):
+        for start, end in year_bounded_chunks(from_dt, to_dt, chunk):
             result = fetch(start, end)
             insert_raw(
                 "carbon_intensity_raw",
