@@ -160,3 +160,44 @@ Columns with known upstream gaps warn on any nulls and only fail once the count 
 **Rejected:** Dropping the test, which would hide a real regression; and failing on any null, which breaks the build for something outside the pipeline's control.
 
 **Status:** implemented.
+
+### Facts are tested for missing periods, not only for bad values
+
+Each fact carries a test comparing the periods it holds against the settlement spine across its own date range.
+
+**Why:** Column tests can only examine rows that exist, so a fact with holes in it passes every one of them. A truncated backfill response cost the generation mart 1,197 periods, and uniqueness, null and range tests all stayed green throughout because the missing rows had nothing to fail. The threshold is set so that the outages the sources genuinely have will warn while a lost chunk, which costs hundreds of periods at a time, will fail.
+
+**Rejected:** Trusting row counts to reveal it, which only works if you know what the count should be; and building facts from the spine so gaps become null rows, which suits the cross-source fact but would leave the mix carrying nine empty rows per missing period.
+
+**Status:** implemented for the generation mix, planned for the remaining facts.
+
+## Marts
+### Wide tables keyed on the half hour rather than a star schema
+
+The marts are a settlement-period spine and a small number of facts joined on `start_time`, with no dimension tables.
+
+**Why:** The dimensions a star would add hold nine fuels, eighteen regions and eleven interconnectors, so normalising them saves a few kilobytes while adding a join to every query on a database with one virtual CPU. `start_time` is already a natural key: eight bytes, unambiguous, and readable without a lookup.
+
+**Rejected:** A conformed star with surrogate keys, which earns its keep when many facts share dimensions and a reporting layer expects that shape, and which here would cost more than it returns.
+
+**Status:** partial (spine and generation mix implemented, four facts to follow).
+
+### Local settlement periods are numbered by position, not by clock arithmetic
+
+`london_settlement_period` counts rows within a local date, ordered by the UTC instant, rather than deriving a number from the local time.
+
+**Why:** The industry numbers settlement periods from local midnight, so a day holds 46 periods when the clocks go forward and 50 when they go back. On the autumn change the wall clock reads 01:30 twice, and arithmetic on local time cannot separate those two half hours, so it would number them identically and end the day at 48. Counting position in a UTC-ordered sequence keeps them distinct and needs no special handling in either direction.
+
+**Rejected:** Deriving the number from the local hour and minute, which is correct on 363 days a year and wrong on the two that the project exists to handle properly.
+
+**Status:** implemented.
+
+### Requests never span a calendar year
+
+Carbon intensity backfill chunks are split at 1 January before being sent.
+
+**Why:** The generation range endpoint truncates a straddling request at the year end and still returns 200, so a chunk covering new year silently loses everything after 31 December. This removed roughly twelve days of history at each year boundary, and nothing in the pipeline noticed because a short response is indistinguishable from a quiet period.
+
+**Rejected:** Detecting short responses by comparing the record count against the range requested, which would catch this case but depends on knowing how many records a range should contain, and that varies with clock changes and source outages.
+
+**Status:** implemented.

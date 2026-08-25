@@ -66,6 +66,11 @@ models:
 
   - name: stg_ci_regional
     data_tests:
+      - no_missing_periods:
+          config:
+            severity: error
+            warn_if: '>0'
+            error_if: '>60'
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns:
@@ -144,6 +149,11 @@ models:
 
   - name: stg_ci_national_generation
     data_tests:
+      - no_missing_periods:
+          config:
+            severity: error
+            warn_if: '>0'
+            error_if: '>60'
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns:
@@ -200,6 +210,11 @@ models:
 
   - name: stg_ci_national
     data_tests:
+      - no_missing_periods:
+          config:
+            severity: error
+            warn_if: '>0'
+            error_if: '>40'
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns:
