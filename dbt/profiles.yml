@@ -1,0 +1,29 @@
+# dbt does not read .env. The container gets these through compose env_file, and a
+# shell needs them exported first.
+gridpulse:
+  target: "{{ env_var('DBT_TARGET', 'dev') }}"
+  outputs:
+    dev:
+      type: postgres
+      host: localhost
+      user: gridpulse
+      password: "{{ env_var('POSTGRES_PASSWORD') }}"
+      dbname: gridpulse
+      port: 5432
+      schema: public
+      threads: 4
+
+    prod:
+      type: postgres
+      host: "{{ env_var('PGHOST') }}"
+      user: "{{ env_var('PGUSER', 'gridpulse') }}"
+      password: "{{ env_var('PGPASSWORD') }}"
+      dbname: "{{ env_var('PGDATABASE', 'gridpulse') }}"
+      port: "{{ env_var('PGPORT', '5432') | int }}"
+      schema: public
+      sslmode: "{{ env_var('PGSSLMODE', 'require') }}"
+      # libpq does not read the macOS keychain and there is no Debian cert path there,
+      # so off Linux this has to point at certifi, as get_connection already does
+      sslrootcert: "{{ env_var('PGSSLROOTCERT', '/etc/ssl/certs/ca-certificates.crt') }}"
+      # one vCPU, and Postgres takes two parallel workers of its own on top
+      threads: 2
