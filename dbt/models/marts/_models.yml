@@ -210,3 +210,305 @@ models:
         description: "Ingestion time of the winning snapshot, kept so the dedup can be audited: 39,424 pairs were fetched more than once by the backfill overlapping the schedule."
         data_tests:
           - not_null
+
+
+
+  - name: fct_half_hour
+    description: >
+      One row per UTC half hour carrying every source, resolved to the latest known
+      value. Built from the spine and bounded to the range the sources cover, so a
+      period nobody published survives as nulls rather than disappearing.
+      Two demand actuals sit side by side on purpose: NESO's national demand has
+      history back to 2024 and drives the demand and imports questions, while
+      Elexon's outturn is the like-for-like comparison for Elexon's own forecast.
+    data_tests:
+      - no_missing_periods:
+          config:
+            severity: error
+            warn_if: '>0'
+            error_if: '>100'
+
+    columns:
+      - name: start_time
+        description: "UTC instant the period begins. (Primary Key)."
+        data_tests:
+          - dbt_utils.at_least_one
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_settlement_period')
+                field: start_time
+
+      - name: end_time
+        description: "UTC instant the period ends. Always start_time plus 30 minutes, carried only so a range filter can be written either way."
+
+      - name: settlement_date
+        description: "The UTC calendar date in which the period occurs. Group by london_date instead unless the question is genuinely about the UTC clock."
+
+      - name: settlement_period
+        description: "1-48 on the UTC clock. The project's canonical numbering, which is not what the sources publish."
+
+      - name: london_date
+        description: "The Europe/London calendar date. This is the date a chart should filter and group on."
+
+      - name: london_settlement_period
+        description: "1-50, counted from local midnight, which is the numbering the industry uses. Filter out clock change days before ranking by this, or periods 49 and 50 win on a sample of two."
+
+      - name: london_hour
+        description: "Hour of the local clock, 0-23."
+
+      - name: is_weekend
+        description: "True on Saturday and Sunday, by the local date."
+
+      - name: is_clock_change_day
+        description: "True on the eight days that are not 48 periods long. Periods 46 to 50 only exist on these days, so any ranking by london_settlement_period has to exclude them."
+        data_tests:
+          - not_null
+
+      - name: intensity_actual
+        description: "Settled carbon intensity (gCO2/kWh), national."
+
+      - name: intensity_forecast
+        description: "Forecast carbon intensity (gCO2/kWh) for the same period."
+
+      - name: intensity_index
+        description: "The API's own banding of the intensity, from very low to very high."
+
+      - name: intensity_error
+        description: "Forecast minus actual carbon intensity. Best case error only, since the API publishes no timestamp for when a forecast was made."
+
+      - name: demand_is_settled
+        description: "True where NESO has published a real settled value. False covers both a period still held as a forecast and the occasional period NESO marks settled while publishing zero in every demand and flow column, since neither gives a usable number."
+
+      - name: national_demand_mw
+        description: "NESO settled national demand (MW), which is net of embedded wind and solar. Null while the period is unsettled, because a NESO forecast row publishes a literal zero."
+
+      - name: transmission_demand_mw
+        description: "NESO transmission system demand (MW). The gap against national demand is pumped storage and exports."
+
+      - name: england_wales_demand_mw
+        description: "NESO demand for England and Wales alone (MW). The only sub-national demand any source publishes."
+
+      - name: underlying_demand_mw
+        description: "National demand with embedded wind and solar added back, so it is what the country actually consumed rather than what the transmission system saw. This is the figure the solar hollowing-out question needs, since national demand falls when embedded solar generates."
+
+      - name: embedded_wind_mw
+        description: "Estimated embedded wind (MW). Genuine on forecast rows, unlike demand, so it is not nulled."
+
+      - name: embedded_solar_mw
+        description: "Estimated embedded solar (MW). Modelled rather than metered, like embedded wind."
+
+      - name: demand_forecast_mw
+        description: "Elexon's last forecast published before the period began."
+
+      - name: demand_forecast_error_mw
+        description: "Forecast minus outturn, so positive means the forecast was too high."
+
+      - name: demand_outturn_mw
+        description: "Elexon settled national demand (INDO), the comparison target for the forecast above. Agrees with NESO's national demand to within about 41 MW, so picking either gives a plausible number and a dashboard should not mix them."
+
+      - name: transmission_outturn_mw
+        description: "Elexon's transmission system demand (ITSDO). Duplicates NESO's transmission demand to within about 61 MW and exists only for a same-publisher comparison."
+
+      - name: system_price
+        description: "Cash-out price (£/MWh). GB has had a single cash-out price since 2015, so buy and sell are identical and only one is carried."
+
+      - name: net_imbalance_volume
+        description: "System imbalance volume (MWh). Positive means the system was short and had to buy."
+
+      - name: market_price
+        description: "APX wholesale market index price (£/MWh). N2EX is excluded because it publishes zero for both price and volume. A period reads zero on both until trading opens, and those are nulled here rather than averaged in as free power."
+
+      - name: market_volume
+        description: "APX traded volume (MWh) behind the price above."
+
+      - name: interconnector_net_mw
+        description: "Net cross-border flow (MW), positive when importing. Excludes the Scotland to England boundary, which is internal to GB. Null on unsettled periods."
+
+      - name: interconnector_import_mw
+        description: "Gross imports only (MW), counting the importing links and ignoring the exporting ones. Always at or above the net figure, so do not use the two interchangeably."
+
+      - name: scottish_transfer_mw
+        description: "Scotland to England boundary flow (MW). Deliberately excluded from the interconnector totals because it is not an import."
+
+      - name: wind_pct
+        description: "Wind as a share of the national generation mix (%)."
+
+      - name: solar_pct
+        description: "Solar as a share of the national generation mix (%)."
+
+      - name: renewable_pct
+        description: "Wind, solar and hydro as a share of generation."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0, max_value: 100}
+              config: {severity: warn}
+
+      - name: renewable_plus_biomass_pct
+        description: "Adds biomass, matching how NESO's own dashboard groups fuels. Biomass is combustion, so the two definitions are kept separate rather than chosen between."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0, max_value: 100}
+              config: {severity: warn}
+
+      - name: low_carbon_pct
+        description: "Renewables plus biomass and nuclear."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0, max_value: 100}
+              config: {severity: warn}
+
+      - name: fossil_pct
+        description: "Gas and coal as a share of generation."
+
+      - name: imports_pct
+        description: "Interconnector imports as a share of the generation mix (%). A share of supply, not the same thing as interconnector_net_mw, which is a flow."
+
+      - name: ci_ingested_at
+        description: "Ingestion time of the carbon intensity snapshot this row won from, kept so the dedup can be audited."
+
+      - name: elexon_ingested_at
+        description: "Ingestion time of the winning Elexon imbalance snapshot."
+
+      - name: neso_ingested_at
+        description: "Ingestion time of the winning NESO snapshot."
+
+
+  - name: fct_regional
+    description: >
+      One row per half hour per region, for 18 regions. Intensity here is a forecast:
+      the API publishes no regional actual, so these are modelled values and a single
+      region's figure is an estimate. Fuel shares are firmer, since the GB row
+      reproduces the national actual mix exactly.
+      Carries no demand, because no source publishes demand per region. England and
+      Wales together is as far down as demand goes, and that sits on fct_half_hour.
+    data_tests:
+      # the same three source outages the mix is missing, so the same threshold
+      - no_missing_periods:
+          config:
+            severity: error
+            warn_if: '>0'
+            error_if: '>100'
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [start_time, region_id]
+
+    columns:
+      - name: start_time
+        description: "UTC instant the period begins."
+        data_tests:
+          - dbt_utils.at_least_one
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_settlement_period')
+                field: start_time
+
+      - name: london_date
+        description: "The Europe/London calendar date. Filter and group on this rather than on start_time."
+
+      - name: region_id
+        description: "1-14 are distribution regions, 15-17 are England, Scotland and Wales, 18 is GB."
+        data_tests:
+          - not_null
+
+      - name: region_name
+        description: "The distribution licensee name, for example WPD South Wales. Label charts with region_shortname instead."
+
+      - name: region_shortname
+        description: "The geographic name, for example South Wales. This is the label a map or chart wants."
+
+      - name: region_type
+        description: "Aggregates already contain the distribution regions, so averaging across all 18 rows double counts and moves the answer by around 4 gCO2/kWh, which is small enough that nobody notices. Filter to dno before averaging."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['dno', 'country', 'gb']
+
+      - name: intensity_forecast
+        description: "Forecast carbon intensity (gCO2/kWh). There is no actual counterpart at regional level, so unlike the national figure this is never settled."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0, max_value: 937}
+              config: {severity: warn}
+
+      - name: intensity_index
+        description: "The API's own banding of the regional forecast, from very low to very high."
+
+      - name: wind_pct
+        description: "Wind as a share of this region's generation mix (%)."
+      - name: solar_pct
+        description: "Solar as a share of this region's generation mix (%)."
+      - name: gas_pct
+        description: "Gas as a share of this region's generation mix (%)."
+      - name: coal_pct
+        description: "Coal as a share of this region's generation mix (%)."
+      - name: nuclear_pct
+        description: "Nuclear as a share of this region's generation mix (%)."
+      - name: hydro_pct
+        description: "Hydro as a share of this region's generation mix (%)."
+      - name: biomass_pct
+        description: "Biomass as a share of this region's generation mix (%)."
+      - name: imports_pct
+        description: "Interconnector imports as a share of this region's supply (%). London runs above 40%, which is the number behind the regional story."
+      - name: other_pct
+        description: "Everything unclassified, as a share of this region's generation mix (%)."
+
+
+  - name: fct_interconnector_flow
+    description: >
+      One row per half hour per interconnector, which is the shape a map needs in
+      order to group flows by country. fct_half_hour carries the same flows summed
+      into a net figure, and a test keeps the two representations in step.
+      Country and cross-border flag are hardcoded here because the source does not
+      publish them, which is acceptable since links change on a timescale of years.
+    data_tests:
+      - no_missing_periods:
+          config:
+            severity: error
+            warn_if: '>0'
+            error_if: '>100'
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [start_time, interconnector]
+
+    columns:
+      - name: start_time
+        description: "UTC instant the period begins. Only settled periods appear, since a forecast row publishes zero in every flow column."
+        data_tests:
+          - dbt_utils.at_least_one
+          - not_null
+
+      - name: london_date
+        description: "The Europe/London calendar date. Filter and group on this rather than on start_time."
+
+      - name: interconnector
+        description: "The link name. Scotland-England boundary is not an interconnector and is named for what it is, because it is the largest flow in the table and would otherwise top an unfiltered chart."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['IFA','IFA2','ElecLink','North Sea Link','Viking Link','BritNed','Nemo Link','Moyle','East West','Greenlink','Scotland-England boundary']
+
+      - name: counterparty_country
+        description: "Where the link lands. Scotland for the internal boundary flow, which is what is_cross_border is for."
+        data_tests:
+          - not_null
+
+      - name: is_cross_border
+        description: "False only for the Scotland to England boundary. Filter on this before totalling imports, or the total comes out around 60% high."
+        data_tests:
+          - not_null
+
+      - name: flow_mw
+        description: "Flow in MW, positive when importing into GB."
+        data_tests:
+          - not_null
+
+      - name: direction
+        description: "Import, export, or idle at exactly zero. Greenlink reads idle until it energised in September 2024, so its idle share is a commissioning artefact rather than an operational one."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['import', 'export', 'idle']
