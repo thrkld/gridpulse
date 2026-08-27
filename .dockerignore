@@ -1,9 +1,10 @@
 .git
 .dbt-venv
-dbt/
 docs/
 tests/
 scripts/
 *.log
 __pycache__/
+dbt/target/
+dbt/dbt_packages/
 .env
