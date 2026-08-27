@@ -206,6 +206,11 @@ models:
         data_tests:
           - not_null
 
+      - name: is_comparable_lead
+        description: "True below the 21.75 hour cutoff described above. Any chart of error against lead time has to filter on this, or it shows the forecast getting more accurate the further ahead it looks, which is the sample changing rather than the forecast improving."
+        data_tests:
+          - not_null
+
       - name: ingested_at
         description: "Ingestion time of the winning snapshot, kept so the dedup can be audited: 39,424 pairs were fetched more than once by the backfill overlapping the schedule."
         data_tests:
