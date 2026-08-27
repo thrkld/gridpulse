@@ -80,10 +80,27 @@
   which is why national kept the data and generation lost it. Reproducible on demand,
   so chunks must stop at the year boundary.
 - Three windows are absent from /generation entirely and cannot be re-fetched:
-  2024-06-11/12 (22 periods), 2025-01-12/13 (17) and 2025-08-10/11 (8). The first is
-  missing from /intensity too, so that one is an outage across the whole API. The other
-  two are the same events that show as null forecasts in the national data above.
+  2024-06-11/12 (22 periods), 2025-01-12/13 (17) and 2025-08-10/11 (8), so 47 in total,
+  against 31 on /intensity, which loses only the June window but loses more of it. The
+  endpoints therefore degraded by different amounts in the same outage. Re-fetching was
+  attempted twice and returned a handful of records each time, so the data does not exist.
 
 ### Elexon
 - market-index rejects ranges >7 days (400)
 - Chunk boundaries are inclusive therefore consecutive chunks duplicate one period
+
+### Cross-source recovery and permanent gaps
+- NESO publishes a Historic GB Generation Mix dataset (resource
+  f93d1835-75bc-43e5-84ad-12472b180a98) which does hold those windows, along with 309,476
+  half-hourly rows reaching back well before 2024 and generation in MW rather than only
+  percentages. It is the route to a longer baseline if one is ever wanted.
+- Its wind is defined differently from the API's. NESO splits transmission-connected
+  WIND from estimated WIND_EMB, while the API reports the two combined, so the mapping is
+  WIND_perc + WIND_EMB_perc, which matches the API to within 0.4 points. Transmission wind
+  is metered and embedded wind is modelled, so the split is more informative rather than
+  more accurate.
+- Carbon intensity itself differs between the two by about 14 gCO2/kWh on average.
+  Overnight periods agree within a point, so the divergence is in daytime periods and
+  embedded solar is the likely cause, but this has not been established. Patching the
+  gaps from this source would therefore splice in periods measuring something slightly
+  different from their neighbours, which is why the gaps are left documented instead.

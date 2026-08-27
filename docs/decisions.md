@@ -171,6 +171,16 @@ Each fact carries a test comparing the periods it holds against the settlement s
 
 **Status:** implemented for the generation mix, planned for the remaining facts.
 
+### Availability is measured from the data rather than from a separate log
+
+Uptime is counted by grouping `ingested_at` into half-hourly buckets per day and comparing against the number of scheduled runs, rather than by recording each run somewhere.
+
+**Why:** A successful fetch already writes a timestamp, so the raw layer is a complete record of every run that worked, going back to the first one. That needs no new table and cannot drift out of step with reality, because it is the same rows the pipeline is judged on.
+
+**Rejected:** Trusting Dagster's own run history, which is a separate database that has already been lost once and says nothing about whether data actually landed.
+
+**Status:** implemented as a query. The limitation is that a run which fired and failed leaves no trace, so this measures successes rather than attempts, and telling those apart is what the planned run audit table would add.
+
 ## Marts
 ### Wide tables keyed on the half hour rather than a star schema
 

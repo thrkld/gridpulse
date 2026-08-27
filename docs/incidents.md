@@ -29,3 +29,17 @@ Both containers started and stayed up, but the UI returned an empty response thr
 **Resolution:** the webserver builds the image and the daemon references the finished tag.
 
 **Changed as a result:** `deploy/docker-compose.yml` now has a single build definition.
+
+## 2026-08-23 to 2026-08-26: Pipeline down for three days after swap disappeared
+
+Ingestion stopped entirely. NESO made its last run on the 23rd at 10:00, the half-hourly sources struggled on until the 25th at around 14:00, and nothing ran again until the 26th at 21:00. The 24th recorded no runs at all.
+
+**Cause:** the 2 GB swapfile was no longer active. With 842 MiB of RAM and nothing to fall back on, the load average reached 15 on a single core. Dagster could not reach Postgres, and the machine was too starved to accept an SSH session, serve the serial console or answer the VM agent promptly, which is why it took so long to diagnose from outside.
+
+**Resolution:** recreated the swapfile through the portal's Run command, which was the only route in that still worked. Ingestion resumed on its own once memory pressure eased, because every schedule fires on its own cron and Dagster retries rather than giving up.
+
+**Changed as a result:** nothing in the code, and that is the uncomfortable part. Nothing yet checks that swap is present, and it is load-bearing rather than a nicety: this machine cannot run Dagster's three processes without it. Why the swapfile vanished has not been established.
+
+**What recovered and what did not:** NESO healed completely on its own, because every fetch pulls a rolling window reaching back to the start of the previous month. Elexon imbalance and demand outturn healed too, since both are re-fetched for yesterday and today on every run. Market index, the demand forecast and regional carbon intensity all needed re-fetching by hand, the first two because the wider catch-up window had been written but not yet deployed, and regional because its sweep skips it by design.
+
+**How it was found:** the `no_missing_periods` tests, written three days earlier, failed on the publication mart and located both gaps precisely. They were the first thing to notice the damage.
