@@ -13,10 +13,13 @@ services:
     image: metabase/metabase
     ports:
       - "3002:3000"
+    volumes:
+      - metabase-data:/metabase.db
     depends_on:
       - postgres
 
 volumes:
   pgdata:
+  metabase-data:
 
 
