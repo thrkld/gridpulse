@@ -25,7 +25,13 @@ clean-targets:         # directories to be removed by `dbt clean`
 
 models:
   gridpulse:
+    # Metabase reads column help text from Postgres comments, so without this every
+    # warning written in the yml stops at the repo and never reaches the dashboard
+    +persist_docs:
+      relation: true
+      columns: true
     staging:
       +materialized: view
     marts:
       +materialized: table
+      +post_hook: "analyze {{ this }}"
