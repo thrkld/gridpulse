@@ -27,7 +27,7 @@ The **marts** layer is six tables keyed on the UTC half hour. Each one deduplica
 
 ## Where it runs
 
-Ingestion runs unattended in the cloud. Dagster schedules the fetches from an Azure VM, and the data lands in an Azure Database for PostgreSQL server in the same region. Dagster keeps its own run and schedule history in a second database on that same server, so restarting the containers does not lose any of it.
+Ingestion and transformation run unattended in the cloud. Dagster schedules the fetches and dbt builds from an Azure VM, and the data lands in an Azure Database for PostgreSQL server in the same region. The marts rebuild every six hours, leaving out the regional one because it is the expensive model and its intensity is forecast-only; the full graph including every test builds nightly after the revision sweep. Dagster keeps its own run and schedule history in a second database on that same server, so restarting the containers does not lose any of it.
 
 The same code also runs locally against the Postgres in `docker-compose.yml`, because the connection details are read from the environment rather than hardcoded. Anything that has gone wrong since the first scheduled run is written down in [docs/incidents.md](docs/incidents.md).
 
@@ -70,7 +70,7 @@ python -m gridpulse.ingest.run_elexon
 # historical load, run once per database
 python scripts/backfill.py
 
-# orchestration (schedules the above per the data sources table)
+# orchestration (schedules ingestion and dbt per the data sources table)
 dagster dev -f src/gridpulse/orchestration/definitions.py -p 3001
 
 # transformations
@@ -78,7 +78,14 @@ pip install -r requirements-dbt.txt
 cd dbt && dbt deps && dbt build
 ```
 
-dbt looks for a gridpulse profile in `~/.dbt/profiles.yml` pointing at localhost:5432, using the dev schema `public`. It does not read `.env`, so if you want to build against a hosted database you need to add a second output to that profile and then run `dbt build --target prod`.
+dbt reads `dbt/profiles.yml`, which is committed and takes its connection details from the environment, so the same file serves a laptop, the local Docker database and the deployed container. It has a `dev` output pointing at localhost and a `prod` output for the hosted database.
+
+dbt does not read `.env` itself, so export it first when building against the cloud:
+
+```bash
+set -a && . .env && set +a
+cd dbt && DBT_TARGET=prod dbt build
+```
 
 ## Testing
 
@@ -103,6 +110,7 @@ cd dbt && dbt build
 - [X] Cloud Postgres on Azure, historical load complete and validated by the dbt suite
 - [X] Unattended scheduled runs: Dagster deployed on an Azure VM, first scheduled run 2026-08-06
 - [X] Marts: six tables keyed on the UTC half hour, latest-value dedup, cross-source joins
+- [X] dbt orchestrated in Dagster: models and tests as assets, marts every six hours, full build nightly
 - [ ] Ingestion hardening: response validation and a run audit table (retries implemented)
 - [ ] CI running the full dbt build against ephemeral Postgres
 - [ ] Dashboard; demand/price forecast consumer

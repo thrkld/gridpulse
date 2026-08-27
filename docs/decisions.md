@@ -120,6 +120,26 @@ History is loaded once from the historic-demand-data resource for each year. The
 **Status:** implemented.
 
 ## Deployment
+### dbt runs as Dagster assets, not as a shell step
+
+The dbt project is loaded through `dagster-dbt`, so every model and test is an asset in the same graph as the ingestion. Raw-layer assets are keyed to match dbt's source names, which joins the two halves into one lineage from API call to mart.
+
+**Why:** A single asset shelling out to `dbt build` would schedule the work but show one green box, so a failure means reading logs to find out which model broke. Keying the ingestion assets to the dbt sources is what makes the graph continuous rather than two disconnected islands, and it costs nothing beyond naming.
+
+**Rejected:** A plain asset running `dbt build` as a subprocess, which is fewer moving parts and gives up per-model visibility; and Dagster's schedules calling dbt with no asset representation at all, which puts the lineage nowhere.
+
+**Status:** implemented.
+
+### Transformation runs on two cadences
+
+The marts rebuild every six hours with the regional mart excluded, and the full graph including every test runs nightly.
+
+**Why:** A full build spends 1,967 seconds of database time, and 896 of those are tests against the 15 million row regional generation view. Refreshing that often enough for a dashboard would keep a burstable server under sustained load and starve the ingestion that shares it. Staging is materialised as views, so a frequent refresh does not need to touch them at all, and selecting the marts alone brings the run down to 202 seconds. The regional mart is left out of the frequent run because it is the single most expensive model and its intensity is forecast-only, so a figure a few hours old loses nothing.
+
+**Rejected:** Excluding only the regional mart, which reads as the obvious optimisation and saves 11% because the expensive tests hang off staging rather than off the mart; and one nightly build, which leaves a dashboard a day stale.
+
+**Status:** implemented.
+
 ### Managed Postgres on Azure, with a planned move
 
 Data is held in Azure Database for PostgreSQL Flexible Server, Burstable B1ms with 32 GB storage, in Sweden Central. The free allocation lasts twelve months, after which the database moves to a cheaper host.
