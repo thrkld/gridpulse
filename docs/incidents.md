@@ -43,3 +43,17 @@ Ingestion stopped entirely. NESO made its last run on the 23rd at 10:00, the hal
 **What recovered and what did not:** NESO healed completely on its own, because every fetch pulls a rolling window reaching back to the start of the previous month. Elexon imbalance and demand outturn healed too, since both are re-fetched for yesterday and today on every run. Market index, the demand forecast and regional carbon intensity all needed re-fetching by hand, the first two because the wider catch-up window had been written but not yet deployed, and regional because its sweep skips it by design.
 
 **How it was found:** the `no_missing_periods` tests, written three days earlier, failed on the publication mart and located both gaps precisely. They were the first thing to notice the damage.
+
+## 2026-08-27: dbt moved into the deployment, pipeline complete end to end
+
+Until today the marts only existed because they were built by hand from a laptop. Ingestion ran unattended and wrote to the raw layer every thirty minutes, but nothing rebuilt anything on top of it, so the modelled tables aged from the moment they were made.
+
+dbt now runs on the VM through `dagster-dbt`. Every model and test is an asset in the same graph as the ingestion, and the raw assets are keyed to match dbt's source names, so the lineage runs unbroken from the API call to the mart rather than stopping at the raw table.
+
+Two cadences: the marts every six hours without the regional one, and the whole graph with all 205 tests at 01:00. The frequent run selects the marts rather than excluding the expensive model, because the cost is not in the mart at all. A full build spends 1,967 seconds of database time and 896 of those are tests against the fifteen million row regional generation view, so excluding the mart alone saves 11%. Staging is materialised as views and never needs rebuilding, and selecting only the marts brings the run to 202 seconds.
+
+**How it went:** the image built with dbt on the first attempt. A full materialisation through the container passed 207 tests with 10 warnings, all of them source gaps already documented in probe findings, and the six-hourly job then ran clean. The marts now carry snapshots ingested at 18:03 rather than whatever a laptop last produced.
+
+**Worth knowing for next time:** two schedules had to be enabled by hand after deploying, because the code does not set `default_status` and new schedules therefore arrive stopped. Nothing warns you about this, and the symptom would have been a pipeline that looked deployed and never ran.
+
+**Still outstanding:** `dbt-core` is not pinned. It arrives as a transitive dependency of `dagster-dbt`, so the container built 1.11.14 while the laptop has 1.11.11, and a rebuild months from now could take something different again. The swapfile also still has no check on it, and its disappearance in August remains unexplained.

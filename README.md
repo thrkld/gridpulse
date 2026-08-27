@@ -27,7 +27,20 @@ The **marts** layer is six tables keyed on the UTC half hour. Each one deduplica
 
 ## Where it runs
 
-Ingestion and transformation run unattended in the cloud. Dagster schedules the fetches and dbt builds from an Azure VM, and the data lands in an Azure Database for PostgreSQL server in the same region. The marts rebuild every six hours, leaving out the regional one because it is the expensive model and its intensity is forecast-only; the full graph including every test builds nightly after the revision sweep. Dagster keeps its own run and schedule history in a second database on that same server, so restarting the containers does not lose any of it.
+Ingestion and transformation both run unattended in the cloud. Dagster schedules them from an Azure VM, and the data lands in an Azure Database for PostgreSQL server in the same region. Dagster keeps its own run and schedule history in a second database on that same server, so restarting the containers does not lose any of it.
+
+| Schedule | Cadence | What it does |
+|---|---|---|
+| `half_hourly_refresh` | every 30 min | latest carbon intensity and Elexon |
+| `twice_daily_refresh` | 10:00 and 22:00 UTC | full NESO snapshot |
+| `daily_sweep` | 00:15 UTC | carbon intensity trailing 48 h, Elexon interim settlement 7 d |
+| `weekly_sweep` | 00:45 Sunday | Elexon initial settlement, trailing 35 d |
+| `six_hourly_dbt_build` | every 6 h | the marts and their tests, excluding the regional one |
+| `nightly_dbt_build` | 01:00 UTC | every model and all 202 tests, after the sweep |
+
+The dbt project is loaded through `dagster-dbt`, so each model and test is an asset rather than one opaque step, and the raw assets are keyed to match dbt's source names. That makes the graph a single unbroken lineage from the API call through to the mart, instead of two halves that happen to run in order.
+
+The frequent build leaves out `fct_regional` because it is by far the most expensive model and its intensity is forecast-only, so a figure a few hours old loses nothing. It selects the marts rather than excluding that one model, because staging is materialised as views and needs no rebuilding at all, which is what takes the run from around 1,970 seconds to 202.
 
 The same code also runs locally against the Postgres in `docker-compose.yml`, because the connection details are read from the environment rather than hardcoded. Anything that has gone wrong since the first scheduled run is written down in [docs/incidents.md](docs/incidents.md).
 
@@ -91,7 +104,7 @@ cd dbt && DBT_TARGET=prod dbt build
 
 **pytest** covers the settlement-period conversion including the days the clocks change, the backfill chunking and the date ranges it produces, the sweep windows, how failed requests are retried, and how the database connection is resolved from the environment.
 
-**dbt** runs 205 tests across staging and marts. Those check the grain of each model is unique, that null constraints have a severity matching how load-bearing the column is, that values fall in accepted ranges, and that no model has silently lost periods, because a table with holes in it passes every test that only examines rows which exist.
+**dbt** runs 202 tests across staging and marts. Those check the grain of each model is unique, that null constraints have a severity matching how load-bearing the column is, that values fall in accepted ranges, and that no model has silently lost periods, because a table with holes in it passes every test that only examines rows which exist.
 
 **CI** runs pytest and ruff, both format and lint, on every push and pull request.
 
@@ -110,9 +123,10 @@ cd dbt && dbt build
 - [X] Cloud Postgres on Azure, historical load complete and validated by the dbt suite
 - [X] Unattended scheduled runs: Dagster deployed on an Azure VM, first scheduled run 2026-08-06
 - [X] Marts: six tables keyed on the UTC half hour, latest-value dedup, cross-source joins
-- [X] dbt orchestrated in Dagster: models and tests as assets, marts every six hours, full build nightly
-- [ ] Ingestion hardening: response validation and a run audit table (retries implemented)
-- [ ] CI running the full dbt build against ephemeral Postgres
+- [X] dbt orchestrated in Dagster: models and tests as assets, deployed 2026-08-27
+- [ ] Incremental materialisation for the two models that rebuild in full
+- [ ] Ingestion hardening: validate responses at fetch, so a 200 carrying the wrong shape fails immediately (retries implemented)
+- [ ] CI compiling the dbt project on every push, and building it against seeded fixtures
 - [ ] Dashboard; demand/price forecast consumer
 
 ## Attribution & licences

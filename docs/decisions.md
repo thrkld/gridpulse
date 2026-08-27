@@ -119,6 +119,26 @@ History is loaded once from the historic-demand-data resource for each year. The
 
 **Status:** implemented.
 
+### Endpoints without a revision sweep get a wider catch-up window
+
+Market index and the demand forecast are re-fetched over the trailing 24 hours on every run, rather than the two hours they actually need.
+
+**Why:** Neither is revised after publication, so there is nothing for a settlement sweep to collect and none was written. That left them with a two-hour recovery window, and the gap between the backfill finishing and the deployment picking up the new code cost 86 periods of market index that nothing healed. Imbalance survived the same interruption untouched, because its sweeps re-fetch seven and thirty-five days regardless of why the data is missing.
+
+**Rejected:** Adding sweeps for both, which would imply revisions that do not happen and would fetch far more than the gap requires; and leaving the window at two hours, which makes any interruption longer than one scheduled run permanent.
+
+**Status:** implemented.
+
+### Requests never span a calendar year
+
+Carbon intensity backfill chunks are split at 1 January before being sent.
+
+**Why:** The generation range endpoint truncates a straddling request at the year end and still returns 200, so a chunk covering new year silently loses everything after 31 December. This removed roughly twelve days of history at each year boundary, and nothing in the pipeline noticed because a short response is indistinguishable from a quiet period.
+
+**Rejected:** Detecting short responses by comparing the record count against the range requested, which would catch this case but depends on knowing how many records a range should contain, and that varies with clock changes and source outages.
+
+**Status:** implemented.
+
 ## Deployment
 ### dbt runs as Dagster assets, not as a shell step
 
@@ -148,7 +168,7 @@ Data is held in Azure Database for PostgreSQL Flexible Server, Burstable B1ms wi
 
 **Rejected:** Oracle Cloud's always free VM, which reclaims instances that stay under twenty percent CPU and would take the pipeline down without warning; Railway, which is simpler to run but costs from the first day and hides the infrastructure work; AWS, whose free tier is now six months of credits with one gigabyte of database storage.
 
-**Status:** implemented for storage. Orchestration still runs locally.
+**Status:** implemented. Orchestration moved onto an Azure VM on 2026-08-06 and dbt joined it on 2026-08-27.
 
 ### Database connection is resolved from the environment
 
@@ -199,7 +219,9 @@ Uptime is counted by grouping `ingested_at` into half-hourly buckets per day and
 
 **Rejected:** Trusting Dagster's own run history, which is a separate database that has already been lost once and says nothing about whether data actually landed.
 
-**Status:** implemented as a query. The limitation is that a run which fired and failed leaves no trace, so this measures successes rather than attempts, and telling those apart is what the planned run audit table would add.
+**Status:** implemented as a query. The limitation is that a run which fired and failed leaves no trace, so this measures successes rather than attempts.
+
+**Revisited 2026-08-27:** the rejected alternative was Dagster's own run history, on the grounds that it lives in a database that had already been lost once. That was true when Dagster kept its state in a container. It now runs on the same managed server as the data, so Dagster does record every attempt including the failures this query cannot see, and a separate audit table would duplicate it. The gap is closed by where the state lives rather than by anything built.
 
 ## Marts
 ### Wide tables keyed on the half hour rather than a star schema
@@ -292,22 +314,3 @@ The Scottish transfer sits in the flow fact with `is_cross_border` false, under 
 
 **Status:** implemented.
 
-### Endpoints without a revision sweep get a wider catch-up window
-
-Market index and the demand forecast are re-fetched over the trailing 24 hours on every run, rather than the two hours they actually need.
-
-**Why:** Neither is revised after publication, so there is nothing for a settlement sweep to collect and none was written. That left them with a two-hour recovery window, and the gap between the backfill finishing and the deployment picking up the new code cost 86 periods of market index that nothing healed. Imbalance survived the same interruption untouched, because its sweeps re-fetch seven and thirty-five days regardless of why the data is missing.
-
-**Rejected:** Adding sweeps for both, which would imply revisions that do not happen and would fetch far more than the gap requires; and leaving the window at two hours, which makes any interruption longer than one scheduled run permanent.
-
-**Status:** implemented.
-
-### Requests never span a calendar year
-
-Carbon intensity backfill chunks are split at 1 January before being sent.
-
-**Why:** The generation range endpoint truncates a straddling request at the year end and still returns 200, so a chunk covering new year silently loses everything after 31 December. This removed roughly twelve days of history at each year boundary, and nothing in the pipeline noticed because a short response is indistinguishable from a quiet period.
-
-**Rejected:** Detecting short responses by comparing the record count against the range requested, which would catch this case but depends on knowing how many records a range should contain, and that varies with clock changes and source outages.
-
-**Status:** implemented.
