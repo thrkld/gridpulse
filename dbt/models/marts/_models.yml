@@ -1,0 +1,212 @@
+version: 2
+
+models:
+  - name: dim_settlement_period
+    description: "UTC half-hourly spine, generated to the end of next year. Every fact table joins to this, and facts are built from it so that a period no source published still appears, with nulls, rather than going missing."
+    columns:
+      - name: start_time
+        description: "UTC instant the period begins. (Primary Key)."
+        data_tests:
+          - dbt_utils.at_least_one
+          - unique
+          - not_null
+
+      - name: end_time
+        description: "UTC instant the period ends."
+        data_tests:
+          - not_null
+
+      - name: settlement_date
+        description: "The UTC calendar date in which the period occurs."
+        data_tests:
+          - not_null
+
+      - name: settlement_period
+        description: "1-48, derived from the UTC clock. Always 48 per day, since a UTC day is always 24 hours. This is the project's canonical numbering and is not what the sources publish."
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                max_value: 48
+
+      - name: london_date
+        description: "The Europe/London calendar date in which the period occurs. Differs from settlement_date for the hour before midnight during BST."
+        data_tests:
+          - not_null
+
+      # 46 on the spring clock change, 50 in autumn
+      - name: london_settlement_period
+        description: "1-50, counted from local midnight. This is the numbering NESO and Elexon publish against, so it is what a local-clock question should group by."
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                max_value: 50
+
+      - name: london_hour
+        description: "Hour of the local clock, 0-23."
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 23
+
+      - name: is_weekend
+        description: "True on Saturday and Sunday, by the local date."
+        data_tests:
+          - not_null
+
+      - name: is_clock_change_day
+        description: "True where the local day is not 48 periods long, so 46 in spring and 50 in autumn."
+        data_tests:
+          - not_null
+
+
+  - name: fct_generation_mix
+    description: "One row per half hour per fuel, national, resolved to the latest snapshot of each. Kept long rather than pivoted so that a fuel appearing or retiring is new rows rather than a schema change."
+    data_tests:
+      # 47 periods are permanently absent from the source; a lost backfill
+      # chunk costs hundreds, hence the threshold
+      - no_missing_periods:
+          config:
+            severity: error
+            warn_if: '>0'
+            error_if: '>100'
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - start_time
+              - fuel
+
+    columns:
+      - name: start_time
+        description: "UTC instant the period begins."
+        data_tests:
+          - dbt_utils.at_least_one
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_settlement_period')
+                field: start_time
+
+      - name: settlement_date
+        description: "The UTC calendar date in which the period occurs."
+        data_tests:
+          - not_null
+
+      - name: settlement_period
+        description: "1-48, derived from the UTC clock."
+        data_tests:
+          - not_null
+
+      # a new fuel must fail rather than warn: the share definitions in
+      # fct_half_hour would silently under-count until it was classified
+      - name: fuel
+        description: "Generation fuel type as published by the Carbon Intensity API."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['biomass','coal','imports','gas','nuclear','other','hydro','solar','wind']
+
+      - name: fuel_perc
+        description: "Share of the generation mix (%) contributed by this fuel in this period."
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
+
+      - name: ingested_at
+        description: "Ingestion time of the snapshot this row was taken from, kept so the dedup can be audited."
+        data_tests:
+          - not_null
+
+
+  - name: fct_demand_forecast_publication
+    description: >
+      One row per settlement period per forecast publication, so roughly 59 rows
+      per period. Keeping every publication is what makes forecast accuracy
+      measurable against how far ahead the call was made.
+      Elexon stops publishing at a fixed time of day rather than at a fixed lead,
+      so the longest lead available varies by period: 44.75 hours for a 04:00
+      period against 21.75 for an 05:00 one. Above 21.75 hours the sample
+      therefore contains only overnight periods, whose demand is low and flat, and
+      average error falls with lead rather than rising. Any comparison across lead
+      times must stop at 21.75 hours or weight the UTC hours equally.
+    data_tests:
+      - no_missing_periods:
+          config:
+            severity: error
+            warn_if: '>0'
+            error_if: '>0'
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - start_time
+              - publish_time
+
+    columns:
+      - name: start_time
+        description: "UTC instant the forecast period begins."
+        data_tests:
+          - dbt_utils.at_least_one
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_settlement_period')
+                field: start_time
+
+      - name: publish_time
+        description: "UTC instant Elexon published this forecast. Half-hourly, and part of the grain."
+        data_tests:
+          - not_null
+
+      - name: lead_hours
+        description: "Hours between publication and the period starting. Negative on the 445 rows published after the period began, which are kept because they distort nothing and removing them would hide that they exist."
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -48
+                max_value: 48
+              config:
+                severity: warn
+
+      - name: demand_forecast_mw
+        description: "Forecast national demand (NDF) in MW."
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 5000
+                max_value: 60000
+              config:
+                severity: warn
+
+      - name: demand_outturn_mw
+        description: "Settled national demand (INDO) in MW, from the same publisher so the comparison is like for like. Null on the live forecast horizon, where the period has not happened yet."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 5000
+                max_value: 60000
+              config:
+                severity: warn
+
+      - name: error_mw
+        description: "Forecast minus outturn, so positive means the forecast was too high. Null until the period settles. Overall bias is +7 MW against a mean demand near 28 GW, which is the evidence that NDF and INDO measure the same quantity."
+
+      - name: is_latest_publication
+        description: "True on the last publication made before the period began. Defined here rather than downstream because 227 periods carry a later publication, and treating that as the latest forecast would score a hindcast."
+        data_tests:
+          - not_null
+
+      - name: ingested_at
+        description: "Ingestion time of the winning snapshot, kept so the dedup can be audited: 39,424 pairs were fetched more than once by the backfill overlapping the schedule."
+        data_tests:
+          - not_null

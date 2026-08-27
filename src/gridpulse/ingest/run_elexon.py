@@ -17,6 +17,9 @@ DEMAND_FORECAST_MAX_CHUNK = timedelta(days=1)  # api rejects 2 days of publicati
 DEMAND_OUTTURN_MAX_CHUNK = timedelta(days=28)  # api rejects a full month
 INTERIM_SWEEP = timedelta(days=7)
 INITIAL_SWEEP = timedelta(days=35)
+# market index and the forecast have no settlement revisions to sweep for, so
+# this window exists only so an outage shorter than a day heals itself
+CATCHUP_WINDOW = timedelta(hours=24)
 
 
 # Between 2 dates insert imbalance data
@@ -82,8 +85,8 @@ def run_latest():
     # Elexon settlement days follow the Europe/London clock
     today = now.astimezone(SETTLEMENT_TZ).date()
     run_imbalance(today - timedelta(days=1), today)
-    run_market_index(now - timedelta(hours=2), now)
-    run_demand_forecast(now - timedelta(hours=2), now)
+    run_market_index(now - CATCHUP_WINDOW, now)
+    run_demand_forecast(now - CATCHUP_WINDOW, now)
     run_demand_outturn(today - timedelta(days=1), today)
 
 

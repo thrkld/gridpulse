@@ -84,7 +84,7 @@ dbt looks for a gridpulse profile in `~/.dbt/profiles.yml` pointing at localhost
 
 **pytest** covers the settlement-period conversion including the days the clocks change, the backfill chunking and the date ranges it produces, the sweep windows, how failed requests are retried, and how the database connection is resolved from the environment.
 
-**dbt** runs 129 schema tests across staging. Those check the grain of each model is unique, that null constraints have a severity matching how load-bearing the column is, that values fall in accepted ranges, and that every model returns at least one row, so a model that has silently gone empty cannot pass by having nothing left to check.
+**dbt** runs 176 tests across staging and marts. Those check the grain of each model is unique, that null constraints have a severity matching how load-bearing the column is, that values fall in accepted ranges, and that no model has silently lost periods, because a table with holes in it passes every test that only examines rows which exist.
 
 **CI** runs pytest and ruff, both format and lint, on every push and pull request.
 

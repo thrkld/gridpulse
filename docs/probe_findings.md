@@ -74,6 +74,15 @@
 - Regional range endpoint rejects 14 days (400); national/generation accept 14
 - Forecast gaps: 2025-01-12/13 (27 periods), 2025-08-10/11 (18)
 - Occasional transient 500s on valid requests
+- /generation truncates any range that crosses 1 January, returning 200 with the
+  data up to 31 December and nothing after it. A 14-day request spanning new year
+  came back with 97 of 673 records. /intensity does not do this over the same range,
+  which is why national kept the data and generation lost it. Reproducible on demand,
+  so chunks must stop at the year boundary.
+- Three windows are absent from /generation entirely and cannot be re-fetched:
+  2024-06-11/12 (22 periods), 2025-01-12/13 (17) and 2025-08-10/11 (8). The first is
+  missing from /intensity too, so that one is an outage across the whole API. The other
+  two are the same events that show as null forecasts in the national data above.
 
 ### Elexon
 - market-index rejects ranges >7 days (400)

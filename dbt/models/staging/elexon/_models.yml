@@ -3,6 +3,11 @@ version: 2
 models:
   - name: stg_elexon_imbalance
     data_tests:
+      - no_missing_periods:
+          config:
+            severity: error
+            warn_if: '>0'
+            error_if: '>0'
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns:
@@ -57,6 +62,11 @@ models:
 
   - name: stg_elexon_market_index
     data_tests:
+      - no_missing_periods:
+          config:
+            severity: error
+            warn_if: '>0'
+            error_if: '>0'
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns:
@@ -121,6 +131,11 @@ models:
 
   - name: stg_elexon_demand_forecast
     data_tests:
+      - no_missing_periods:
+          config:
+            severity: error
+            warn_if: '>0'
+            error_if: '>0'
       # A single response repeats some records verbatim (same period, same
       # publication, same value), so this is the source's habit rather than a
       # parsing fault. Marts dedup on (start_time, publish_time) regardless.
@@ -187,6 +202,11 @@ models:
 
   - name: stg_elexon_demand_outturn
     data_tests:
+      - no_missing_periods:
+          config:
+            severity: error
+            warn_if: '>0'
+            error_if: '>0'
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns:
