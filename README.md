@@ -23,7 +23,7 @@ The **raw** layer stores API responses as JSONB exactly as they arrived, and it 
 
 The **staging** layer puts one dbt view over each source endpoint. Those views unpack the JSON, tidy up the types and derive the UTC settlement fields, but they do no logic that spans tables.
 
-The **marts** layer is in progress. It will be six tables keyed on the UTC half hour, which deduplicate each source down to its latest known value and then join the sources together. The reasoning behind that shape, along with the alternatives that were rejected, sits in [docs/decisions.md](docs/decisions.md).
+The **marts** layer is six tables keyed on the UTC half hour. Each one deduplicates its sources down to their latest known value and then joins them together: a settlement-period spine, a wide fact carrying every source on one row, and four facts at their own grain for the generation mix, forecast publications, regions and interconnectors. Model and column descriptions are written into the database as comments on every build, so the caveats reach whatever queries the tables rather than stopping at this repository. The reasoning behind that shape, along with the alternatives that were rejected, sits in [docs/decisions.md](docs/decisions.md).
 
 ## Where it runs
 
@@ -84,7 +84,7 @@ dbt looks for a gridpulse profile in `~/.dbt/profiles.yml` pointing at localhost
 
 **pytest** covers the settlement-period conversion including the days the clocks change, the backfill chunking and the date ranges it produces, the sweep windows, how failed requests are retried, and how the database connection is resolved from the environment.
 
-**dbt** runs 176 tests across staging and marts. Those check the grain of each model is unique, that null constraints have a severity matching how load-bearing the column is, that values fall in accepted ranges, and that no model has silently lost periods, because a table with holes in it passes every test that only examines rows which exist.
+**dbt** runs 205 tests across staging and marts. Those check the grain of each model is unique, that null constraints have a severity matching how load-bearing the column is, that values fall in accepted ranges, and that no model has silently lost periods, because a table with holes in it passes every test that only examines rows which exist.
 
 **CI** runs pytest and ruff, both format and lint, on every push and pull request.
 
@@ -102,7 +102,7 @@ cd dbt && dbt build
 - [X] Local Dagster orchestration: ingestion assets + schedules
 - [X] Cloud Postgres on Azure, historical load complete and validated by the dbt suite
 - [X] Unattended scheduled runs: Dagster deployed on an Azure VM, first scheduled run 2026-08-06
-- [ ] Marts: six tables keyed on the UTC half hour, latest-value dedup, cross-source joins
+- [X] Marts: six tables keyed on the UTC half hour, latest-value dedup, cross-source joins
 - [ ] Ingestion hardening: response validation and a run audit table (retries implemented)
 - [ ] CI running the full dbt build against ephemeral Postgres
 - [ ] Dashboard; demand/price forecast consumer

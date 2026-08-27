@@ -67,6 +67,10 @@
     Full-snapshot endpoint: ~2,100 records per call, so staging holds 48 duplicate copies (~102k rows) needs mart-side dedup.
     One read timeout (30s) on 2026-07-07 18:00 UTC probe.
     Stray manual ingest from 2026-06-21 present in neso_raw.
+    A rows are not always populated either: 12 rows across 6 periods in August 2026
+    carry the settled indicator with ND, England/Wales demand and all 11 flows at
+    zero, and TSD at 500. Five healed on a later snapshot, one has not, so the
+    marts require a settled marker AND a demand above zero before reading the row.
 
 ## Backfill findings (August 2026)
 ### Carbon Intensity
@@ -104,3 +108,24 @@
   embedded solar is the likely cause, but this has not been established. Patching the
   gaps from this source would therefore splice in periods measuring something slightly
   different from their neighbours, which is why the gaps are left documented instead.
+
+## Marts findings (August 2026)
+
+- Elexon stops publishing the demand forecast at a fixed time of day rather than at a
+  fixed lead, so the longest lead available depends on the period: 44.75 hours for a
+  04:00 period against 21.75 for an 05:00 one. Above 21.75 hours the sample is
+  therefore overnight periods only, whose demand is low and flat, and mean absolute
+  error falls from 681 MW at 22 hours to 468 MW at 44. That is the sample changing,
+  not the forecast improving, so comparisons across lead time have to stop at 21.75
+  hours. `fct_demand_forecast_publication.is_comparable_lead` carries the cutoff.
+- Greenlink is published from 2024-01-01 but reads exactly zero until 2024-09-12,
+  which is when the link energised. It is never null. Roughly 42% of its rows are
+  zero, and most of that is the eight months before it existed rather than idle time.
+- APX publishes zero for both price and volume until a period opens for trading. 19
+  periods since 2024 never filled in, so a zero price there means unknown rather than
+  free. Those are nulled in the marts; the two periods that cleared at zero with real
+  volume behind them are kept.
+- The imbalance revision clock and arrival order have never disagreed: of 953 periods
+  Elexon revised, ordering by `created_datetime` and ordering by `ingested_at` pick
+  the same row every time. The revision clock is still the correct key, but it is
+  defensive rather than load-bearing today.

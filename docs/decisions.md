@@ -23,7 +23,7 @@ No overwriting raw tables: append-only, meaning re-running ingestion inserts new
 
 **Rejected:** UPSERT/ON CONFLICT updates in raw tables, which would destroy historical revisions and make ingestion order-dependent.
 
-**Status:** partial (raw layer implemented; mart-side dedup planned).
+**Status:** implemented.
 
 ### UTC as the canonical settlement-time model
 
@@ -43,7 +43,7 @@ No cross-source joining within staging tables. Staging serves as cleaning and st
 
 **Rejected:** Performing joins in staging, which couples datasets and makes validation harder.
 
-**Status:** staging implemented; marts planned.
+**Status:** implemented.
 
 ### One raw table per source with endpoint discriminator
 
@@ -169,7 +169,7 @@ Each fact carries a test comparing the periods it holds against the settlement s
 
 **Rejected:** Trusting row counts to reveal it, which only works if you know what the count should be; and building facts from the spine so gaps become null rows, which suits the cross-source fact but would leave the mix carrying nine empty rows per missing period.
 
-**Status:** implemented for the generation mix, planned for the remaining facts.
+**Status:** implemented on every fact.
 
 ### Availability is measured from the data rather than from a separate log
 
@@ -190,7 +190,77 @@ The marts are a settlement-period spine and a small number of facts joined on `s
 
 **Rejected:** A conformed star with surrogate keys, which earns its keep when many facts share dimensions and a reporting layer expects that shape, and which here would cost more than it returns.
 
-**Status:** partial (spine and generation mix implemented, four facts to follow).
+**Status:** implemented.
+
+### Each source is deduplicated on its own terms, not on arrival order
+
+Every source is reduced to one row per period with `distinct on`, but the ordering key differs per source. Imbalance orders by Elexon's own `created_datetime` before ingestion time. NESO orders settled rows ahead of forecast rows using a null-safe comparison, then by ingestion time.
+
+**Why:** Arrival order is a property of the pipeline rather than of the data, so it is only a safe tiebreak. Elexon stamps its own revision clock, which is the publisher's statement about which version supersedes which. NESO needs the null-safe form because the 35,088 historic rows carry no indicator column at all, and a bare comparison against 'F' evaluates to null on every one of them, which would sort settled history behind forecasts and blank two years of demand.
+
+**Rejected:** One ordering by ingestion time everywhere, which is right for four sources and quietly wrong for the two that matter most.
+
+**Status:** implemented.
+
+### A settled marker is not trusted on its own
+
+NESO's demand and flow columns are only read where the row is marked settled and national demand is above zero. The `demand_is_settled` flag carries the same condition.
+
+**Why:** Forecast rows publish a literal zero in every demand and flow column, which is the documented behaviour and the reason the flag exists. What was not expected is that NESO also publishes settled rows the same way, six of them in August 2026 alone. One of those survives as the latest snapshot, and without this condition it reaches the marts as a national demand collapse to zero and a simultaneous outage across eleven interconnectors. Both figures are plausible enough in isolation to end up on a chart.
+
+**Rejected:** Trusting the indicator, which is what the source says rather than what it published; and a hardcoded plausibility floor, which would need revisiting whenever demand shifts.
+
+**Status:** implemented.
+
+### Interconnector flows are kept both wide and long
+
+The flows appear as a net column on `fct_half_hour` and again as one row per link on `fct_interconnector_flow`.
+
+**Why:** The two shapes answer different questions. Correlating imports against price or demand needs the flows on the same row as everything else, and a map needs one row per link so it can group by counterparty country. Deriving either from the other at query time costs a join or an aggregate on every chart.
+
+**Rejected:** Only the long form, which makes every cross-source question a join; and only the wide form, which cannot be mapped without unpivoting in the dashboard. The price of holding both is a test asserting the net column equals the sum of the cross-border rows, so the two cannot drift apart.
+
+**Status:** implemented.
+
+### The Scotland to England boundary is carried as a flow but named as a boundary
+
+The Scottish transfer sits in the flow fact with `is_cross_border` false, under the name "Scotland-England boundary" rather than NESO's column name.
+
+**Why:** It is an internal GB boundary, so counting it as an import inflates the total by about 60%. It also averages 2,378 MW, which is larger than any real interconnector, so an unfiltered chart of average flow by link puts it at the top. A flag alone still depends on somebody remembering to apply it, whereas a name that does not read as an interconnector fails safe.
+
+**Rejected:** Dropping it, which loses a genuinely interesting flow; and keeping the source's name, which leaves the most misleading row in the table looking exactly like the others.
+
+**Status:** implemented.
+
+### One system price column rather than a buy and sell pair
+
+`fct_half_hour` carries a single `system_price`.
+
+**Why:** GB moved to single cash-out pricing in 2015, and the two columns are identical across all 119,133 staging rows. Carrying both would invite a dashboard to plot a spread that is always zero.
+
+**Rejected:** Both columns for source fidelity, which the raw layer already provides. A warn-severity test asserts they stay equal, so a return to dual pricing announces itself rather than being silently averaged away.
+
+**Status:** implemented.
+
+### Regional modelling covers intensity and mix, not demand
+
+`fct_regional` holds forecast intensity and nine fuel shares for 18 regions, and no demand at all.
+
+**Why:** No ingested source publishes demand below national level. England and Wales together is as far down as it goes, and that sits on the half-hourly fact. Saying so in the model's description is what stops somebody looking for it. The regions also nest, since 15 to 17 are the nations and 18 is GB, so a `region_type` column exists to make filtering to the 14 distribution regions the obvious move. Averaging across all 18 rows shifts carbon intensity by about 4 gCO2/kWh, which is small enough that nothing would ever flag it.
+
+**Rejected:** Regional demand, which cannot be sourced; and leaving the aggregates out, which would lose the nation comparison the regional story is built on.
+
+**Status:** implemented.
+
+### Column documentation is persisted into the database
+
+`persist_docs` writes every model and column description into Postgres comments on each build.
+
+**Why:** The guards this layer depends on are all written as prose: filter regions to distribution level before averaging, exclude the Scottish boundary from imports, stop lead-time comparisons at 21.75 hours, treat regional intensity as forecast only. A dashboard reads column help text from the database, so without this the warnings reach anybody reading the repository and nobody using the data.
+
+**Rejected:** Repeating the caveats in the dashboard, which puts the same rule in two places and lets them diverge.
+
+**Status:** implemented.
 
 ### Local settlement periods are numbered by position, not by clock arithmetic
 
