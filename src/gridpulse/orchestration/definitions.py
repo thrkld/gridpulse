@@ -1,4 +1,18 @@
-from dagster import Definitions, asset, ScheduleDefinition
+from pathlib import Path
+
+from dagster import (
+    AssetExecutionContext,
+    AssetKey,
+    Definitions,
+    ScheduleDefinition,
+    asset,
+)
+from dagster_dbt import (
+    DbtCliResource,
+    DbtProject,
+    build_schedule_from_dbt_selection,
+    dbt_assets,
+)
 
 from gridpulse.ingest.run_carbon_intensity import (
     run_latest as ci_run_latest,
@@ -12,7 +26,20 @@ from gridpulse.ingest.run_elexon import (
 from gridpulse.ingest.run_neso import run_latest as neso_run_latest
 
 
-@asset
+# `dagster dev` regenerates the manifest; the image ships one parsed at build time, so
+# starting a container never depends on the database being reachable.
+DBT_PROJECT = DbtProject(project_dir=Path(__file__).parents[3] / "dbt")
+DBT_PROJECT.prepare_if_dev()
+
+
+@dbt_assets(manifest=DBT_PROJECT.manifest_path, project=DBT_PROJECT)
+def gridpulse_dbt_assets(context: AssetExecutionContext, dbt: DbtCliResource):
+    yield from dbt.cli(["build"], context=context).stream()
+
+
+# These keys deliberately match the dbt source keys (source name + table name), so the
+# Dagster graph connects the ingestions that update the raw tables to dbt's staging views.
+@asset(key=AssetKey(["gridpulse", "carbon_intensity_raw"]))
 def carbon_intensity_latest_raw():
     ci_run_latest()
 
@@ -22,7 +49,7 @@ def carbon_intensity_sweep_raw():
     ci_run_sweep()
 
 
-@asset
+@asset(key=AssetKey(["gridpulse", "elexon_raw"]))
 def elexon_latest_raw():
     elexon_run_latest()
 
@@ -37,7 +64,7 @@ def elexon_sweep_interim_raw():
     elexon_run_sweep_interim()
 
 
-@asset
+@asset(key=AssetKey(["gridpulse", "neso_raw"]))
 def neso_latest_raw():
     neso_run_latest()
 
@@ -70,14 +97,40 @@ weekly_schedule = ScheduleDefinition(
     execution_timezone="UTC",
 )
 
+# Staging is materialized as views, so only the mart tables need refreshing between
+# full runs. Selecting marts alone skips the tests against the 15m row regional
+# generation view, which are 896 of the 1,967 seconds a full build spends on the
+# database. fct_regional is left out because it is a further 223 seconds and its
+# intensity is forecast-only, so a day-old figure loses nothing.
+six_hourly_dbt_schedule = build_schedule_from_dbt_selection(
+    [gridpulse_dbt_assets],
+    job_name="six_hourly_dbt_build",
+    schedule_name="six_hourly_dbt_build",
+    cron_schedule="0 */6 * * *",
+    dbt_select="marts",
+    dbt_exclude="fct_regional",
+    execution_timezone="UTC",
+)
+
+nightly_dbt_schedule = build_schedule_from_dbt_selection(
+    [gridpulse_dbt_assets],
+    job_name="nightly_dbt_build",
+    schedule_name="nightly_dbt_build",
+    cron_schedule="0 1 * * *",
+    execution_timezone="UTC",
+)
+
 defs = Definitions(
     schedules=[
         half_hourly_schedule,
         twice_daily_schedule,
         daily_schedule,
         weekly_schedule,
+        six_hourly_dbt_schedule,
+        nightly_dbt_schedule,
     ],
     assets=[
+        gridpulse_dbt_assets,
         carbon_intensity_latest_raw,
         carbon_intensity_sweep_raw,
         elexon_latest_raw,
@@ -85,4 +138,5 @@ defs = Definitions(
         elexon_sweep_interim_raw,
         neso_latest_raw,
     ],
+    resources={"dbt": DbtCliResource(project_dir=DBT_PROJECT)},
 )
