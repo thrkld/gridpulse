@@ -192,6 +192,16 @@ The marts are a settlement-period spine and a small number of facts joined on `s
 
 **Status:** implemented.
 
+### Endpoints without a revision sweep get a wider catch-up window
+
+Market index and the demand forecast are re-fetched over the trailing 24 hours on every run, rather than the two hours they actually need.
+
+**Why:** Neither is revised after publication, so there is nothing for a settlement sweep to collect and none was written. That left them with a two-hour recovery window, and the gap between the backfill finishing and the deployment picking up the new code cost 86 periods of market index that nothing healed. Imbalance survived the same interruption untouched, because its sweeps re-fetch seven and thirty-five days regardless of why the data is missing.
+
+**Rejected:** Adding sweeps for both, which would imply revisions that do not happen and would fetch far more than the gap requires; and leaving the window at two hours, which makes any interruption longer than one scheduled run permanent.
+
+**Status:** implemented.
+
 ### Requests never span a calendar year
 
 Carbon intensity backfill chunks are split at 1 January before being sent.
