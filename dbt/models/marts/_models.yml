@@ -125,3 +125,88 @@ models:
         description: "Ingestion time of the snapshot this row was taken from, kept so the dedup can be audited."
         data_tests:
           - not_null
+
+
+  - name: fct_demand_forecast_publication
+    description: >
+      One row per settlement period per forecast publication, so roughly 59 rows
+      per period. Keeping every publication is what makes forecast accuracy
+      measurable against how far ahead the call was made.
+      Elexon stops publishing at a fixed time of day rather than at a fixed lead,
+      so the longest lead available varies by period: 44.75 hours for a 04:00
+      period against 21.75 for an 05:00 one. Above 21.75 hours the sample
+      therefore contains only overnight periods, whose demand is low and flat, and
+      average error falls with lead rather than rising. Any comparison across lead
+      times must stop at 21.75 hours or weight the UTC hours equally.
+    data_tests:
+      - no_missing_periods:
+          config:
+            severity: error
+            warn_if: '>0'
+            error_if: '>0'
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - start_time
+              - publish_time
+
+    columns:
+      - name: start_time
+        description: "UTC instant the forecast period begins."
+        data_tests:
+          - dbt_utils.at_least_one
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_settlement_period')
+                field: start_time
+
+      - name: publish_time
+        description: "UTC instant Elexon published this forecast. Half-hourly, and part of the grain."
+        data_tests:
+          - not_null
+
+      - name: lead_hours
+        description: "Hours between publication and the period starting. Negative on the 445 rows published after the period began, which are kept because they distort nothing and removing them would hide that they exist."
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -48
+                max_value: 48
+              config:
+                severity: warn
+
+      - name: demand_forecast_mw
+        description: "Forecast national demand (NDF) in MW."
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 5000
+                max_value: 60000
+              config:
+                severity: warn
+
+      - name: demand_outturn_mw
+        description: "Settled national demand (INDO) in MW, from the same publisher so the comparison is like for like. Null on the live forecast horizon, where the period has not happened yet."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 5000
+                max_value: 60000
+              config:
+                severity: warn
+
+      - name: error_mw
+        description: "Forecast minus outturn, so positive means the forecast was too high. Null until the period settles. Overall bias is +7 MW against a mean demand near 28 GW, which is the evidence that NDF and INDO measure the same quantity."
+
+      - name: is_latest_publication
+        description: "True on the last publication made before the period began. Defined here rather than downstream because 227 periods carry a later publication, and treating that as the latest forecast would score a hindcast."
+        data_tests:
+          - not_null
+
+      - name: ingested_at
+        description: "Ingestion time of the winning snapshot, kept so the dedup can be audited: 39,424 pairs were fetched more than once by the backfill overlapping the schedule."
+        data_tests:
+          - not_null
