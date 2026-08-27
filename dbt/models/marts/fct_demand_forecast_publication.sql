@@ -1,6 +1,5 @@
 {{ config(
-    indexes=[{'columns': ['start_time', 'publish_time']}],
-    post_hook=["analyze {{ this }}"]
+    indexes=[{'columns': ['start_time', 'publish_time']}]
 ) }}
 
 with forecast as (
@@ -43,5 +42,8 @@ select
     -- later one, and taking that would score a hindcast as a forecast
     lead_hours >= 0
         and publish_time = max(publish_time) filter (where lead_hours >= 0)
-            over (partition by start_time) as is_latest_publication
+            over (partition by start_time) as is_latest_publication,
+    -- above 21.75 hours only overnight periods are still being published, and their
+    -- demand is low and flat, so error falls with lead unless the sample is cut here
+    lead_hours between 0 and 21.75 as is_comparable_lead
 from joined
