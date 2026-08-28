@@ -25,5 +25,6 @@ gridpulse:
       # libpq does not read the macOS keychain and there is no Debian cert path there,
       # so off Linux this has to point at certifi, as get_connection already does
       sslrootcert: "{{ env_var('PGSSLROOTCERT', '/etc/ssl/certs/ca-certificates.crt') }}"
-      # one vCPU, and Postgres takes two parallel workers of its own on top
-      threads: 2
+      # one worker, deliberately. Two hold two sets of results in memory at once,
+      # and this VM ran out of it on 2026-08-28
+      threads: 1

@@ -116,7 +116,9 @@ six_hourly_dbt_schedule = build_schedule_from_dbt_selection(
     [gridpulse_dbt_assets],
     job_name="six_hourly_dbt_build",
     schedule_name="six_hourly_dbt_build",
-    cron_schedule="0 */6 * * *",
+    # 02:20 rather than the hour: clear of the half-hourly ingestion at :00 and :30,
+    # and clear of midnight, where this and both sweeps used to land together
+    cron_schedule="20 2,8,14,20 * * *",
     dbt_select="marts",
     execution_timezone="UTC",
 )
@@ -125,7 +127,9 @@ nightly_dbt_schedule = build_schedule_from_dbt_selection(
     [gridpulse_dbt_assets],
     job_name="nightly_dbt_build",
     schedule_name="nightly_dbt_build",
-    cron_schedule="0 1 * * *",
+    # 04:00, not 01:00. At 01:00 it overlapped the 00:15 sweep and the machine ran
+    # out of memory on 2026-08-28, taking ingestion down for eight hours
+    cron_schedule="0 4 * * *",
     execution_timezone="UTC",
 )
 
