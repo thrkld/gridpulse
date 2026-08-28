@@ -13,10 +13,8 @@ def swap_total_kb(path: str = MEMINFO) -> int:
 
 
 def check_swap(path: str = MEMINFO) -> int:
-    # The VM has 842 MiB of RAM and cannot hold Dagster's three processes without
-    # swap. When the swapfile disappeared in August the load average reached 15 and
-    # the machine became too starved to accept an SSH session, so nothing could be
-    # diagnosed from outside for three days.
+    # Load-bearing rather than a nicety: without swap this VM cannot hold Dagster's
+    # processes, and when it vanished in August the machine was unreachable for days.
     if not os.path.exists(path):
         raise RuntimeError(f"{path} not found, so swap cannot be verified")
     total = swap_total_kb(path)

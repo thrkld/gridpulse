@@ -46,7 +46,5 @@ jobs:
           PGPASSWORD: gridpulse
       - run: cd dbt && dbt deps # dbt_packages/ is gitignored and dbt_utils is required
       # run, not build: 15 at_least_one tests exist precisely to fail on an empty
-      # model, so a build here would fail by design. This proves every model's SQL
-      # is valid against a real Postgres, which is what catches a broken ref or a
-      # column that was dropped upstream but is still selected downstream
+      # model. This proves the SQL executes; the tests need seeded fixtures
       - run: cd dbt && dbt run

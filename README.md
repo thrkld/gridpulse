@@ -23,7 +23,7 @@ The **raw** layer stores API responses as JSONB exactly as they arrived, and it 
 
 The **staging** layer puts one dbt view over each source endpoint. Those views unpack the JSON, tidy up the types and derive the UTC settlement fields, but they do no logic that spans tables.
 
-The **marts** layer is six tables keyed on the UTC half hour. Each one deduplicates its sources down to their latest known value and then joins them together: a settlement-period spine, a wide fact carrying every source on one row, and four facts at their own grain for the generation mix, forecast publications, regions and interconnectors. Model and column descriptions are written into the database as comments on every build, so the caveats reach whatever queries the tables rather than stopping at this repository. The reasoning behind that shape, along with the alternatives that were rejected, sits in [docs/decisions.md](docs/decisions.md).
+The **marts** layer is six tables keyed on the UTC half hour. Each one deduplicates its sources down to their latest known value and then joins them together: a settlement-period spine, a wide fact carrying every source on one row, and four facts at their own grain for the generation mix, forecast publications, regions and interconnectors. The reasoning behind that shape, along with the alternatives that were rejected, sits in [docs/decisions.md](docs/decisions.md).
 
 ## Where it runs
 
@@ -40,15 +40,11 @@ Ingestion and transformation both run unattended in the cloud. Dagster schedules
 
 The dbt project is loaded through `dagster-dbt`, so each model and test is an asset rather than one opaque step, and the raw assets are keyed to match dbt's source names. That makes the graph a single unbroken lineage from the API call through to the mart, instead of two halves that happen to run in order.
 
-The frequent build selects the marts rather than everything, because staging is materialised as views and needs no rebuilding at all. That alone took the run from around 1,970 seconds to 202. The two largest marts then became incremental, keyed on arrival time rather than on settlement time for the reason described in [docs/decisions.md](docs/decisions.md), which brought all six down to 93 seconds together.
-
 The same code also runs locally against the Postgres in `docker-compose.yml`, because the connection details are read from the environment rather than hardcoded. Anything that has gone wrong since the first scheduled run is written down in [docs/incidents.md](docs/incidents.md).
 
 ## Dealing with different 'clocks'
 
 Carbon Intensity and Elexon both publish UTC instants, but NESO publishes a *local* settlement date together with a period number. That means a NESO day has 46 periods when the clocks go forward in spring and 50 when they go back in autumn. Normalising everything to UTC on the way in is what stops those two conventions from colliding.
-
-The reasoning behind this and every other design choice, including the alternatives that were rejected, is in [docs/decisions.md](docs/decisions.md).
 
 ## Data sources
 
