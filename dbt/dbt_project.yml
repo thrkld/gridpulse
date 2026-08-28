@@ -34,4 +34,4 @@ models:
       +materialized: view
     marts:
       +materialized: table
-      +post_hook: "analyze {{ this }}"
+      +post-hook: "analyze {{ this }}"
