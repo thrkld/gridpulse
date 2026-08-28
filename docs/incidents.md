@@ -57,3 +57,19 @@ Two cadences: the marts every six hours without the regional one, and the whole 
 **Worth knowing for next time:** two schedules had to be enabled by hand after deploying, because the code does not set `default_status` and new schedules therefore arrive stopped. Nothing warns you about this, and the symptom would have been a pipeline that looked deployed and never ran.
 
 **Still outstanding:** `dbt-core` is not pinned. It arrives as a transitive dependency of `dagster-dbt`, so the container built 1.11.14 while the laptop has 1.11.11, and a rebuild months from now could take something different again. The swapfile also still has no check on it, and its disappearance in August remains unexplained.
+
+## 2026-08-27: swap is now checked, and the two large marts build incrementally
+
+Two threads left open by the entries above are closed here.
+
+**Swap.** The August outage ended with "nothing yet checks that swap is present, and it is load-bearing rather than a nicety". A Dagster asset now reads `SwapTotal` from `/proc/meminfo` on every half-hourly ingestion run and fails if it is zero. It rides on the existing schedule deliberately, because the deployment earlier today showed that a new schedule arrives stopped, and a health check nobody enabled would have been worse than none. This detects the condition rather than preventing it, and why the swapfile vanished is still unknown.
+
+**Incremental builds.** `fct_regional` and `fct_demand_forecast_publication` were rebuilding in full on every run, 276 and 156 seconds, which is why the six-hourly schedule had to exclude one of them. Both now build incrementally and take 9 and 4 seconds.
+
+The finding that made it work is worth recording, because the intuitive answer is wrong. Staging models are views over `jsonb_array_elements`, so filtering on `start_time` cannot be evaluated until after the payload has been exploded, while `ingested_at` is a real column on the raw table and filters before it. Same rows out, 344x the work: cost 98,098 against 33,712,757 on the regional generation view. An incremental model keyed on `start_time` would have looked correct and saved nothing.
+
+`fct_demand_forecast_publication` needed more than a filter. Its latest-publication flag is a window over the whole period, and its outturn arrives up to 91.6 hours late, so a batch selected by arrival time never holds everything a period needs. It now replaces whole periods and reads its own earlier rows back for the periods a batch touches.
+
+**How it was verified:** a full refresh, then two consecutive incremental runs. All three produced identical row counts and identical checksums on both tables, with exactly one latest-publication flag per period and no settled period missing its outturn.
+
+**Also corrected:** `sql/raw_tables.sql` declared three indexes that did not exist on the cloud database, which had only primary keys. They have been applied. They are worth very little for these queries, since the raw heap is 99 pages and the win is entirely in the pushdown, but the repository was describing something untrue.

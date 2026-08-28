@@ -140,6 +140,46 @@ Carbon intensity backfill chunks are split at 1 January before being sent.
 **Status:** implemented.
 
 ## Deployment
+### The two large marts are built incrementally, keyed on arrival time
+
+`fct_regional` and `fct_demand_forecast_publication` are `materialized='incremental'` and filter on `ingested_at`, not on `start_time`.
+
+**Why:** Staging models are views over `jsonb_array_elements`. `ingested_at` is a real column on the raw table, so a filter on it is applied before the explode and only surviving payloads are detoasted. `start_time` is pulled out of the JSON, so a filter on it cannot be evaluated until after the explode has already happened. Measured on the regional generation view, the first plans at a cost of 98,098 and the second at 33,712,757, for identical output. Choosing the intuitive key would have produced a model that looks incremental and saves nothing.
+
+**Rejected:** Filtering on `start_time`, for the reason above; and leaving both as full rebuilds, which cost 340 of the 384 seconds the marts spent building and forced the frequent schedule to exclude a model.
+
+**Status:** implemented. The two dropped from 276 and 156 seconds to 9 and 4.
+
+### Whole periods are replaced, not individual publications
+
+`fct_demand_forecast_publication` has a grain of `(start_time, publish_time)` but a `unique_key` of `start_time` alone, and it reads its own previous rows back for the periods a batch touches.
+
+**Why:** Two parts of the model need every publication for a period rather than the ones that happened to arrive together. `is_latest_publication` is a window over the period, so a partial batch marks several rows as latest. The outturn join is the subtler one: the outturn lands up to 91.6 hours after the period, long after publications for it have stopped, so a period reached only through its forecast would keep a null error for good. The batch therefore takes new rows from staging by arrival time, adds the periods' earlier rows back from the table itself, and recomputes over the union. Reading those earlier rows from staging instead would mean filtering on `start_time` and would cost more than a full rebuild.
+
+**Rejected:** A plain append keyed on the publication grain, which breaks both the flag and the error and is caught by two existing tests; and moving the flag downstream into `fct_half_hour`, which removes a documented column that a dashboard may want.
+
+**Status:** implemented.
+
+### CI runs the models but not the tests
+
+Every push builds the whole dbt project against an empty Postgres service container with `dbt run`.
+
+**Why:** 202 tests previously gated nothing, so a broken model was found by the nightly build the following morning if anyone looked. Running the models against a real database catches a bad `ref`, invalid SQL and a column dropped upstream but still selected downstream. It cannot run the tests, because fifteen `at_least_one` tests exist precisely to fail on an empty model and would fail by design. Making the tests run needs seeded fixtures, which is worth doing separately rather than not validating anything in the meantime.
+
+**Rejected:** `dbt parse` alone, which never executes any SQL and so lets a broken column reference through; and a full `dbt build`, which cannot pass without data.
+
+**Status:** implemented. Seeded fixtures remain outstanding.
+
+### The host is checked for swap on every ingestion run
+
+A Dagster asset reads `SwapTotal` from `/proc/meminfo` and fails if it is zero.
+
+**Why:** The VM has 842 MiB of RAM and cannot hold Dagster's three processes without swap. When the swapfile disappeared in August the load average reached 15 and the machine became too starved to accept an SSH session, so it took three days to diagnose from outside. The check rides on the existing half-hourly schedule rather than getting one of its own, because a new schedule arrives stopped unless `default_status` is set, and a health check nobody enabled is worse than none. The assets in that job are independent, so this failing marks the run red without stopping the ingestion beside it.
+
+**Rejected:** A systemd unit on the VM, which is more robust but lives outside the repository and so is invisible to anyone reading the code; and continuing to rely on noticing missing data days later, which is how the outage was actually found.
+
+**Status:** implemented. This detects the condition rather than preventing it, and why the swapfile vanished is still unknown.
+
 ### dbt runs as Dagster assets, not as a shell step
 
 The dbt project is loaded through `dagster-dbt`, so every model and test is an asset in the same graph as the ingestion. Raw-layer assets are keyed to match dbt's source names, which joins the two halves into one lineage from API call to mart.

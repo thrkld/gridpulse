@@ -35,12 +35,12 @@ Ingestion and transformation both run unattended in the cloud. Dagster schedules
 | `twice_daily_refresh` | 10:00 and 22:00 UTC | full NESO snapshot |
 | `daily_sweep` | 00:15 UTC | carbon intensity trailing 48 h, Elexon interim settlement 7 d |
 | `weekly_sweep` | 00:45 Sunday | Elexon initial settlement, trailing 35 d |
-| `six_hourly_dbt_build` | every 6 h | the marts and their tests, excluding the regional one |
+| `six_hourly_dbt_build` | every 6 h | all six marts and their tests, 93 seconds |
 | `nightly_dbt_build` | 01:00 UTC | every model and all 202 tests, after the sweep |
 
 The dbt project is loaded through `dagster-dbt`, so each model and test is an asset rather than one opaque step, and the raw assets are keyed to match dbt's source names. That makes the graph a single unbroken lineage from the API call through to the mart, instead of two halves that happen to run in order.
 
-The frequent build leaves out `fct_regional` because it is by far the most expensive model and its intensity is forecast-only, so a figure a few hours old loses nothing. It selects the marts rather than excluding that one model, because staging is materialised as views and needs no rebuilding at all, which is what takes the run from around 1,970 seconds to 202.
+The frequent build selects the marts rather than everything, because staging is materialised as views and needs no rebuilding at all. That alone took the run from around 1,970 seconds to 202. The two largest marts then became incremental, keyed on arrival time rather than on settlement time for the reason described in [docs/decisions.md](docs/decisions.md), which brought all six down to 93 seconds together.
 
 The same code also runs locally against the Postgres in `docker-compose.yml`, because the connection details are read from the environment rather than hardcoded. Anything that has gone wrong since the first scheduled run is written down in [docs/incidents.md](docs/incidents.md).
 
@@ -124,9 +124,11 @@ cd dbt && dbt build
 - [X] Unattended scheduled runs: Dagster deployed on an Azure VM, first scheduled run 2026-08-06
 - [X] Marts: six tables keyed on the UTC half hour, latest-value dedup, cross-source joins
 - [X] dbt orchestrated in Dagster: models and tests as assets, deployed 2026-08-27
-- [ ] Incremental materialisation for the two models that rebuild in full
+- [X] Incremental materialisation for the two models that rebuilt in full, keyed on arrival time
+- [X] CI building every model against an empty Postgres on each push
+- [X] Swap checked on every ingestion run, after the August outage
 - [ ] Ingestion hardening: validate responses at fetch, so a 200 carrying the wrong shape fails immediately (retries implemented)
-- [ ] CI compiling the dbt project on every push, and building it against seeded fixtures
+- [ ] dbt tests running in CI against seeded fixtures
 - [ ] Dashboard; demand/price forecast consumer
 
 ## Attribution & licences
