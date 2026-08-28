@@ -13,3 +13,40 @@ jobs:
       - run: pytest
       - run: ruff format --check .
       - run: ruff check .
+
+  dbt:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16 # matches docker-compose.yml
+        env:
+          POSTGRES_DB: gridpulse
+          POSTGRES_USER: gridpulse
+          POSTGRES_PASSWORD: gridpulse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_PASSWORD: gridpulse # the only variable the dev target needs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt -r requirements-dbt.txt
+      - run: pip install -e .
+      # staging models resolve public.<table> at plan time, so the raw tables have
+      # to exist even though nothing will put a row in them
+      - run: psql -h localhost -U gridpulse -d gridpulse -f sql/raw_tables.sql
+        env:
+          PGPASSWORD: gridpulse
+      - run: cd dbt && dbt deps # dbt_packages/ is gitignored and dbt_utils is required
+      # run, not build: 15 at_least_one tests exist precisely to fail on an empty
+      # model, so a build here would fail by design. This proves every model's SQL
+      # is valid against a real Postgres, which is what catches a broken ref or a
+      # column that was dropped upstream but is still selected downstream
+      - run: cd dbt && dbt run
