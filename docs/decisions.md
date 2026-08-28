@@ -192,13 +192,13 @@ The dbt project is loaded through `dagster-dbt`, so every model and test is an a
 
 ### Transformation runs on two cadences
 
-The marts rebuild every six hours with the regional mart excluded, and the full graph including every test runs nightly.
+All six marts rebuild every six hours, and the full graph including every test runs nightly.
 
-**Why:** A full build spends 1,967 seconds of database time, and 896 of those are tests against the 15 million row regional generation view. Refreshing that often enough for a dashboard would keep a burstable server under sustained load and starve the ingestion that shares it. Staging is materialised as views, so a frequent refresh does not need to touch them at all, and selecting the marts alone brings the run down to 202 seconds. The regional mart is left out of the frequent run because it is the single most expensive model and its intensity is forecast-only, so a figure a few hours old loses nothing.
+**Why:** A full build spends 1,967 seconds of database time, and 896 of those are tests against the 15 million row regional generation view. Refreshing that often enough for a dashboard would keep a burstable server under sustained load and starve the ingestion that shares it. Staging is materialised as views, so a frequent refresh does not need to touch them at all, and selecting the marts alone brought the run down to 202 seconds.
 
-**Rejected:** Excluding only the regional mart, which reads as the obvious optimisation and saves 11% because the expensive tests hang off staging rather than off the mart; and one nightly build, which leaves a dashboard a day stale.
+**Rejected:** Excluding only the regional mart, which reads as the obvious optimisation and saves 11%, because the expensive tests hang off staging rather than off the mart; and one nightly build, which leaves a dashboard a day stale.
 
-**Status:** implemented.
+**Status:** implemented. The frequent run initially excluded `fct_regional` as well, at 202 seconds. Once it and the publication mart became incremental the whole set fell to 93 seconds and the exclusion was dropped.
 
 ### One Dagster run at a time
 
