@@ -1,2 +1,3 @@
+dbt-core==1.11.14
 dbt-postgres==1.10.2
 dagster-dbt==0.29.13
