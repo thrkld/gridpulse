@@ -1,15 +1,78 @@
 {{ config(
-    indexes=[{'columns': ['start_time', 'publish_time']}]
+    materialized='incremental',
+    unique_key='start_time',
+    indexes=[
+        {'columns': ['start_time', 'publish_time']},
+        {'columns': ['ingested_at']}
+    ]
 ) }}
 
-with forecast as (
+{#
+    Incremental on ingested_at, because that is a real column on the raw table and
+    the filter therefore runs before jsonb_array_elements. publish_time is pulled
+    out of the JSON, so filtering on it only bites after the explode and costs more
+    than rebuilding the lot.
+
+    The grain is (start_time, publish_time) but the unique_key is start_time alone,
+    because delete+insert has to replace whole periods: both is_latest_publication
+    and the outturn dedup need every publication for a period, and a batch selected
+    by arrival time never holds them all. The missing ones come from this table
+    rather than from staging, which is what keeps it cheap.
+
+    Five days of lookback, set by how late the outturn arrives rather than by any
+    revision: the slowest observed was 91.6 hours.
+#}
+{% set lookback = "interval '5 days'" %}
+
+with new_forecast as (
+    select start_time, publish_time, national_demand_forecast, ingested_at
+    from {{ ref('stg_elexon_demand_forecast') }}
+    where boundary = 'N'
+    {% if is_incremental() %}
+      and ingested_at > (select max(ingested_at) - {{ lookback }} from {{ this }})
+    {% endif %}
+),
+
+new_outturn as (
+    select start_time, national_demand, publish_time, ingested_at
+    from {{ ref('stg_elexon_demand_outturn') }}
+    {% if is_incremental() %}
+    where ingested_at > (select max(ingested_at) - {{ lookback }} from {{ this }})
+    {% endif %}
+),
+
+{% if is_incremental() %}
+-- every period either side has touched. The outturn half earns its place: it lands
+-- days after the period, long after publications for it have stopped, so a period
+-- reached only through its forecast would keep a null error_mw forever
+affected as (
+    select start_time from new_forecast
+    union
+    select start_time from new_outturn
+),
+
+carried as (
+    select start_time, publish_time, demand_forecast_mw, demand_outturn_mw, ingested_at
+    from {{ this }}
+    where start_time in (select start_time from affected)
+),
+{% endif %}
+
+forecast as (
     select distinct on (start_time, publish_time)
         start_time,
         publish_time,
         national_demand_forecast,
         ingested_at
-    from {{ ref('stg_elexon_demand_forecast') }}
-    where boundary = 'N'
+    from (
+        select start_time, publish_time, national_demand_forecast, ingested_at
+        from new_forecast
+        {% if is_incremental() %}
+        union all
+        select start_time, publish_time, demand_forecast_mw, ingested_at
+        from carried
+        {% endif %}
+    ) every_publication
     order by start_time, publish_time, ingested_at desc
 ),
 
@@ -19,7 +82,19 @@ outturn as (
     select distinct on (start_time)
         start_time,
         national_demand
-    from {{ ref('stg_elexon_demand_outturn') }}
+    from (
+        select start_time, national_demand, publish_time, ingested_at
+        from new_outturn
+        {% if is_incremental() %}
+        union all
+        -- resolved on an earlier run. Outturn never changes once published, so a
+        -- carried value is as good as a re-read one, and the null publish_time
+        -- sorts it behind anything the source has just sent
+        select start_time, demand_outturn_mw, null::timestamptz, ingested_at
+        from carried
+        where demand_outturn_mw is not null
+        {% endif %}
+    ) every_outturn
     order by start_time, publish_time desc nulls last, ingested_at desc
 ),
 

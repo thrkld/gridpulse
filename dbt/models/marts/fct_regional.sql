@@ -1,15 +1,33 @@
 {{ config(
+    materialized='incremental',
+    unique_key=['start_time', 'region_id'],
     indexes=[
         {'columns': ['start_time', 'region_id'], 'unique': True},
-        {'columns': ['london_date'], 'type': 'brin'}
+        {'columns': ['london_date'], 'type': 'brin'},
+        {'columns': ['ingested_at']}
     ]
 ) }}
+
+{#
+    Filtered on ingested_at rather than start_time, and that is the whole trick.
+    ingested_at is a real column on the raw table, so the filter is applied before
+    jsonb_array_elements runs and only surviving payloads are exploded. start_time
+    is extracted from the JSON, so a filter on it is only reachable after the
+    explode has already happened: same rows out, 344x the work.
+
+    Two days of lookback against a measured settling time of 1.73 hours. Both
+    sources read the same raw rows, so one window keeps intensity and mix in step.
+#}
+{% set lookback = "interval '2 days'" %}
 
 with intensity as (
     select distinct on (start_time, region_id)
         start_time, region_id, region_name, region_shortname,
         intensity_index, intensity_forecast, ingested_at
     from {{ ref('stg_ci_regional') }}
+    {% if is_incremental() %}
+    where ingested_at > (select max(ingested_at) - {{ lookback }} from {{ this }})
+    {% endif %}
     order by start_time, region_id, ingested_at desc nulls last
 ),
 
@@ -29,6 +47,9 @@ mix as (
         select distinct on (start_time, region_id, fuel)
             start_time, region_id, fuel, fuel_perc
         from {{ ref('stg_ci_regional_generation') }}
+        {% if is_incremental() %}
+        where ingested_at > (select max(ingested_at) - {{ lookback }} from {{ this }})
+        {% endif %}
         order by start_time, region_id, fuel, ingested_at desc nulls last
     ) latest
     group by start_time, region_id

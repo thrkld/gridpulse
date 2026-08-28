@@ -132,6 +132,10 @@ models:
       One row per settlement period per forecast publication, so roughly 59 rows
       per period. Keeping every publication is what makes forecast accuracy
       measurable against how far ahead the call was made.
+      Built incrementally on arrival time with a five day lookback, which is set by
+      how late the outturn lands rather than by any revision. Whole periods are
+      replaced rather than individual publications, because the latest-publication
+      flag needs to see all of a period's rows at once.
       Elexon stops publishing at a fixed time of day rather than at a fixed lead,
       so the longest lead available varies by period: 44.75 hours for a 04:00
       period against 21.75 for an 05:00 one. Above 21.75 hours the sample
@@ -382,7 +386,9 @@ models:
 
   - name: fct_regional
     description: >
-      One row per half hour per region, for 18 regions. Intensity here is a forecast:
+      One row per half hour per region, for 18 regions. Built incrementally on
+      arrival time with a two day lookback, against a measured settling time of
+      under two hours. Intensity here is a forecast:
       the API publishes no regional actual, so these are modelled values and a single
       region's figure is an estimate. Fuel shares are firmer, since the GB row
       reproduces the national actual mix exactly.

@@ -100,15 +100,14 @@ weekly_schedule = ScheduleDefinition(
 # Staging is materialized as views, so only the mart tables need refreshing between
 # full runs. Selecting marts alone skips the tests against the 15m row regional
 # generation view, which are 896 of the 1,967 seconds a full build spends on the
-# database. fct_regional is left out because it is a further 223 seconds and its
-# intensity is forecast-only, so a day-old figure loses nothing.
+# database. fct_regional used to be excluded on top of that; now that it and the
+# publication mart build incrementally the whole set takes 93 seconds, so it is back.
 six_hourly_dbt_schedule = build_schedule_from_dbt_selection(
     [gridpulse_dbt_assets],
     job_name="six_hourly_dbt_build",
     schedule_name="six_hourly_dbt_build",
     cron_schedule="0 */6 * * *",
     dbt_select="marts",
-    dbt_exclude="fct_regional",
     execution_timezone="UTC",
 )
 
