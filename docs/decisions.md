@@ -200,6 +200,26 @@ The marts rebuild every six hours with the regional mart excluded, and the full 
 
 **Status:** implemented.
 
+### One Dagster run at a time
+
+`deploy/dagster.yaml` sets `max_concurrent_runs: 1` on the queued run coordinator.
+
+**Why:** It was unset, so nothing capped concurrency. On 2026-08-28 three schedules landing within an hour of each other ran simultaneously rather than queueing, exhausted a 1 GiB machine and took ingestion down for ten hours. A single dbt build peaks at 1.9 GB on its own, so two overlapping need more than 3 GB, and the failure was a matter of when rather than whether. Queueing costs a few minutes of delay on a pipeline whose freshest source updates every thirty minutes, which is nothing.
+
+**Rejected:** Sizing the machine for peak concurrency instead, which pays for headroom that exists only to absorb a collision that need not happen; and spacing the schedules alone, which reduces the chance of overlap without bounding it, and does nothing about catch-up runs after downtime, which is how the same machine was flattened a second time that morning.
+
+**Status:** implemented, alongside spacing the dbt schedules away from the sweep window.
+
+### The orchestration VM is sized from a measured peak
+
+The VM has 4 GiB. A full dbt build was measured at 1.9 GB peak, sequential, with one dbt thread.
+
+**Why:** The original 1 GiB machine was adequate for ingestion alone and became impossible once dbt joined the containers, which was not obvious until it was measured. 2 GiB would leave roughly a hundred megabytes of headroom at peak and put the pipeline back to swapping on every nightly build. Anything smaller cannot run this project at all, which quietly excludes most free VM tiers.
+
+**Rejected:** Continuing to tune around an undersized machine, having spent a morning on swap and disk before measuring the thing that actually mattered.
+
+**Status:** implemented on Azure. Compute is a candidate to move to a cheaper host, since nothing depends on the provider and the database connection is resolved from the environment.
+
 ### Managed Postgres on Azure, with a planned move
 
 Data is held in Azure Database for PostgreSQL Flexible Server, Burstable B1ms with 32 GB storage, in Sweden Central. The free allocation lasts twelve months, after which the database moves to a cheaper host.
