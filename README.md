@@ -35,8 +35,8 @@ Ingestion and transformation both run unattended in the cloud. Dagster schedules
 | `twice_daily_refresh` | 10:00 and 22:00 UTC | full NESO snapshot |
 | `daily_sweep` | 00:15 UTC | carbon intensity trailing 48 h, Elexon interim settlement 7 d |
 | `weekly_sweep` | 00:45 Sunday | Elexon initial settlement, trailing 35 d |
-| `six_hourly_dbt_build` | every 6 h | all six marts and their tests, 93 seconds |
-| `nightly_dbt_build` | 01:00 UTC | every model and all 202 tests, after the sweep |
+| `six_hourly_dbt_build` | 02:20, 08:20, 14:20, 20:20 UTC | all six marts and their tests, 93 seconds |
+| `nightly_dbt_build` | 04:00 UTC | every model and all 202 tests |
 
 The dbt project is loaded through `dagster-dbt`, so each model and test is an asset rather than one opaque step, and the raw assets are keyed to match dbt's source names. That makes the graph a single unbroken lineage from the API call through to the mart, instead of two halves that happen to run in order.
 

@@ -73,3 +73,19 @@ The finding that made it work is worth recording, because the intuitive answer i
 **How it was verified:** a full refresh, then two consecutive incremental runs. All three produced identical row counts and identical checksums on both tables, with exactly one latest-publication flag per period and no settled period missing its outturn.
 
 **Also corrected:** `sql/raw_tables.sql` declared three indexes that did not exist on the cloud database, which had only primary keys. They have been applied. They are worth very little for these queries, since the raw heap is 99 pages and the win is entirely in the pushdown, but the repository was describing something untrue.
+
+## 2026-08-28: ingestion down eight hours after the first full nightly dbt build
+
+Ingestion stopped at 01:51 UTC and did not run again until the VM was restarted at about 10:45. Twenty settlement periods were missing at the point it was noticed.
+
+**Cause:** memory. Available memory fell below 5% at around 01:00, which is when `nightly_dbt_build` fires. This was the first full nightly build since dbt was added to the containers the previous day, so the machine was holding the Dagster webserver, the daemon, and a dbt process working through 217 nodes, on 842 MiB of RAM.
+
+The reason it did not simply recover is that `deploy/dagster.yaml` configured `QueuedRunCoordinator` with no `max_concurrent_runs`, so nothing capped how many runs could execute at once. `six_hourly_dbt_build` at 00:00, `daily_sweep` at 00:15 and `nightly_dbt_build` at 01:00 were not queueing behind each other, they were competing, and ingestion was competing with all three. After the restart the same absent limit let the daemon launch five catch-up runs simultaneously, which was visible as five `multiprocessing-fork` workers holding about 360 MiB between them.
+
+**Resolution:** restarted the VM from the portal. Run command hung rather than returning, the same symptom as August, because the agent could not get enough CPU to answer. Swap was present and active on reboot, so the fstab entry added the previous day did its job.
+
+**Changed as a result:** `max_concurrent_runs: 1`, which is the actual fix and was simply never set. Alongside it, prod dbt threads dropped from 2 to 1, `nightly_dbt_build` moved from 01:00 to 04:00 so it no longer overlaps the 00:15 sweep, and `six_hourly_dbt_build` moved to 02:20 and every six hours from there, off both midnight and the half-hourly ingestion slots. The incremental marts written the same day cut the nightly build from about 11 minutes to 7 and a half, which shortens the pressure without reducing its peak.
+
+**Two wrong turns worth recording.** The first diagnosis was the August failure repeating, a missing swapfile. It was not: swap was present throughout. The second was a full disk, reached because CPU sitting at 5% seemed to rule out memory exhaustion. That was backwards, since low CPU was the aftermath of processes dying rather than evidence against it. The portal's available-memory metric settled it. Both detours cost time that a memory check on the host would have saved.
+
+**Still outstanding:** the swap asset added the previous day checks that swap exists, and would have passed cleanly through this entire incident. Available memory is the thing worth alerting on, and nothing watches it. The honest structural answer is that 842 MiB was adequate for ingestion alone and is not adequate for ingestion plus Dagster plus dbt, so a resize to a size with 2 GiB is the fix that stops this being managed around.
