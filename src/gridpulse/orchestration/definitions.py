@@ -14,6 +14,7 @@ from dagster_dbt import (
     dbt_assets,
 )
 
+from gridpulse.health import check_swap
 from gridpulse.ingest.run_carbon_intensity import (
     run_latest as ci_run_latest,
     run_sweep as ci_run_sweep,
@@ -69,10 +70,19 @@ def neso_latest_raw():
     neso_run_latest()
 
 
+# Rides on the half-hourly schedule rather than getting one of its own, because a
+# new schedule arrives stopped and a health check nobody enabled is worse than none.
+# The assets in that job are independent, so this failing marks the run red without
+# stopping the ingestion running beside it.
+@asset
+def host_has_swap():
+    check_swap()
+
+
 half_hourly_schedule = ScheduleDefinition(
     name="half_hourly_refresh",
     cron_schedule="*/30 * * * *",  # Runs every 30min
-    target=[carbon_intensity_latest_raw, elexon_latest_raw],
+    target=[carbon_intensity_latest_raw, elexon_latest_raw, host_has_swap],
     execution_timezone="UTC",
 )
 
@@ -136,6 +146,7 @@ defs = Definitions(
         elexon_sweep_initial_raw,
         elexon_sweep_interim_raw,
         neso_latest_raw,
+        host_has_swap,
     ],
     resources={"dbt": DbtCliResource(project_dir=DBT_PROJECT)},
 )
