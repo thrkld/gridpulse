@@ -6,13 +6,13 @@ GridPulse is an ELT pipeline for UK electricity data. It ingests carbon intensit
 
 ## What it answers
 
-- When is the greenest half hour of the day, when is the cheapest, and are they the same one?
+- When are the greenest and cheapest half hours, and how closely do their daily patterns align?
 - How accurate do the carbon intensity and demand forecasts turn out to be once the actual figures land?
 - How do imbalance prices move as demand and the renewables share change?
-- How much of GB demand is met by interconnector imports rather than by domestic generation?
+- How large are net interconnector imports relative to GB national demand?
 - When does the price of power go negative, and what is the grid doing when it happens?
-- What does being out of balance actually cost, measured against the wholesale price?
-- How much has embedded solar hollowed out midday demand since 2024?
+- How far does the imbalance price differ from the wholesale price?
+- How have midday demand and estimated embedded solar changed since 2024?
 - How different are the nations' grids from one another?
 
 ## Architecture
@@ -36,7 +36,7 @@ Ingestion and transformation both run unattended in the cloud. Dagster schedules
 | `daily_sweep` | 00:15 UTC | carbon intensity trailing 48 h, Elexon interim settlement 7 d |
 | `weekly_sweep` | 00:45 Sunday | Elexon initial settlement, trailing 35 d |
 | `six_hourly_dbt_build` | 02:20, 08:20, 14:20, 20:20 UTC | all six marts and their tests, 93 seconds |
-| `nightly_dbt_build` | 04:00 UTC | every model and all 202 tests |
+| `nightly_dbt_build` | 04:00 UTC | every model and its tests (203 in the current project) |
 
 The dbt project is loaded through `dagster-dbt`, so each model and test is an asset rather than one opaque step, and the raw assets are keyed to match dbt's source names. That makes the graph a single unbroken lineage from the API call through to the mart, instead of two halves that happen to run in order.
 
@@ -96,11 +96,75 @@ set -a && . .env && set +a
 cd dbt && DBT_TARGET=prod dbt build
 ```
 
+## Metabase dashboard
+
+The Compose stack serves Metabase at <http://localhost:3002>. Finish its first-run
+setup, then create an API key in **Admin → Settings → Authentication → API keys**.
+The key needs permission to manage the database connection, collection and questions;
+an administrator key can provision the full setup. Keep it in the gitignored `.env`:
+
+```dotenv
+METABASE_URL=http://localhost:3002
+METABASE_API_KEY=your-key
+```
+
+From the repository root, after building the marts:
+
+```bash
+python scripts/provision_metabase.py --verify
+```
+
+The script creates a `GridPulse (managed)` collection and prints the dashboard URL.
+Rerunning updates SQL, descriptions, chart settings and layout, including recovery
+after a partially completed run. It leaves other collections and dashboards alone.
+Treat the managed collection as repository-owned: manual layout changes there will
+be replaced. Question names are identifiers. A declared previous name is migrated
+in place; an undeclared rename leaves the old question available for manual cleanup.
+
+For an existing Metabase database connection, set `METABASE_DATABASE_ID` to its
+numeric ID. Otherwise the script reuses a connection named `GridPulse marts`, or
+creates one from `PG*`. It does not update an existing connection's credentials.
+For local Docker data, set `METABASE_PGHOST=postgres` and
+`METABASE_PGSSLMODE=disable`; the password defaults to `POSTGRES_PASSWORD`.
+`localhost` inside Metabase is the Metabase container, not the database container.
+Hosted connections must be reachable from Docker and allowed through any firewall.
+For `verify-full` or `verify-ca`, the script uploads the CA bundle from
+`METABASE_PGSSLROOTCERT`, `PGSSLROOTCERT`, or certifi (in that order), because a
+certificate path on your laptop is not a path inside the Metabase container.
+New connections disable full field-value scanning; native SQL questions do not
+need Metabase to scan every raw and staging column.
+Use a read-only database account for ongoing dashboard access.
+
+The 15 questions cover the original analytical questions and expose coverage:
+
+| Question | Dashboard evidence |
+|---|---|
+| Greenest versus cheapest | Matched daily-pattern charts and overlap between each day's cheapest and lowest-carbon quarters |
+| Forecast accuracy | Carbon MAE by month; NDF MAE at six horizons on the same target periods |
+| Imbalance and grid conditions | Demand/renewables bins with sample counts |
+| Imports | Net cross-border flow relative to demand; country totals sum links before averaging |
+| Negative prices | Monthly frequency among known prices, plus matched grid conditions |
+| Imbalance versus wholesale | Signed and absolute price spreads, not a participant's realised cash cost |
+| Midday solar | Completed-month national demand, estimated embedded solar and demand with solar added back; not a causal estimate |
+| Nations | England, Scotland and Wales on common half-hours; regional intensity is forecast-only |
+
+Monthly field coverage and daily NDF publication coverage accompany the charts.
+Permanent source gaps remain missing. The demand chart measures historical
+publisher accuracy, including recovered publications; it does not replay what this
+pipeline knew at the time. Carbon ingestion does not retain fixed-horizon forecast
+vintages. The marts refresh every six hours, so this is not a live dashboard.
+See [probe findings](docs/probe_findings.md) for the source limitations and
+[incidents](docs/incidents.md) for recovered outages.
+
+The Metabase image is pinned and its application state is persisted in a Docker
+volume. That volume is not a backup; this local Compose setup is not a hardened
+public deployment.
+
 ## Testing
 
-**pytest** covers the settlement-period conversion including the days the clocks change, the backfill chunking and the date ranges it produces, the sweep windows, how failed requests are retried, and how the database connection is resolved from the environment.
+**pytest** covers the settlement-period conversion including the days the clocks change, the backfill chunking and the date ranges it produces, the sweep windows, how failed requests are retried, and how the database connection is resolved from the environment. Dashboard tests cover update/recovery behaviour, scope protection and chart definitions. PostgreSQL fixtures check missing-value denominators, matched samples, forecast horizons, flow aggregation, carbon/price alignment and publication windows.
 
-**dbt** runs 202 tests across staging and marts. Those check the grain of each model is unique, that null constraints have a severity matching how load-bearing the column is, that values fall in accepted ranges, and that no model has silently lost periods, because a table with holes in it passes every test that only examines rows which exist.
+**dbt** defines 203 tests across staging and marts. Those check the grain of each model is unique, that null constraints have a severity matching how load-bearing the column is, that values fall in accepted ranges, and that no model has silently lost periods, because a table with holes in it passes every test that only examines rows which exist. The NDF publication-window test warns after a two-UTC-day grace period; it can flag source delays as well as ingestion gaps and needs investigation, not automatic zero-filling.
 
 **CI** runs pytest and ruff, both format and lint, on every push and pull request.
 
@@ -108,6 +172,28 @@ cd dbt && DBT_TARGET=prod dbt build
 make check # See 'Makefile' for specific format of tests
 cd dbt && dbt build
 ```
+
+SQL fixture tests skip unless `GRIDPULSE_TEST_POSTGRES` is set to a disposable
+PostgreSQL connection string. They create only temporary tables, exclude `public`
+from the search path, and roll back every transaction. CI runs these against its
+Postgres service:
+
+```bash
+GRIDPULSE_TEST_POSTGRES='postgresql://user:password@localhost:5432/testdb' pytest tests/metabase_sql_test.py
+```
+
+An optional end-to-end test provisions a **fresh, disposable** Metabase instance,
+executes every question, reruns provisioning and checks recovery from an empty
+dashboard. It refuses an already configured instance. It uses the usual `PG*` or
+`METABASE_PG*` connection settings; queries require the marts to exist:
+
+```bash
+GRIDPULSE_TEST_METABASE_URL=http://localhost:TEST_PORT pytest tests/metabase_api_test.py
+```
+
+Do not point this at your main Metabase instance. Remove the disposable container
+after testing, since its application database holds the test account and database
+connection credentials. Neither integration test changes production source data.
 
 ## Status
 
@@ -125,7 +211,9 @@ cd dbt && dbt build
 - [X] Swap checked on every ingestion run, after the August outage
 - [ ] Ingestion hardening: validate responses at fetch, so a 200 carrying the wrong shape fails immediately (retries implemented)
 - [ ] dbt tests running in CI against seeded fixtures
-- [ ] Dashboard; demand/price forecast consumer
+- [X] Repository-managed Metabase questions, coverage checks and SQL regression fixtures
+- [ ] Provision and visually verify the dashboard in the main Metabase instance
+- [ ] Demand/price forecast consumer
 
 ## Attribution & licences
 

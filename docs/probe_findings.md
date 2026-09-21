@@ -129,3 +129,94 @@
   Elexon revised, ordering by `created_datetime` and ordering by `ingested_at` pick
   the same row every time. The revision clock is still the correct key, but it is
   defensive rather than load-bearing today.
+
+## Forecast and calendar audit (18 September 2026)
+
+Reproduce the checks with `python scripts/audit_forecast_data.py`. They use a
+read-only transaction against the configured database. Counts below describe the
+original audit snapshot; subsequent ingestion and repairs can change them.
+
+### INDO publication latency and ingestion latency are different
+
+Across 47,594 target periods, first publication was 0.5 hours after `start_time`
+at both the median and p99. The maximum was 5.12 hours before the live era and
+1.8 hours from 6 August onwards. There were 69 pre-live and two live periods
+above one hour. No period in the stored snapshots had more than one distinct
+non-null national-demand value. This is evidence of no observed revisions in
+that sample, not a guarantee that INDO cannot revise.
+
+Live-era first ingestion had a median delay of 1.01 hours and a maximum of
+112.83 hours. The earlier 91.6-hour figure in the incremental model referred to
+pipeline arrival, not Elexon publication. The five-day overlap is retained for
+arrival-time processing and catch-up; backfilled rows carry a new ingestion time.
+
+For an as-of feature, use the actual source publication time. To replay what this
+pipeline could have known, also require the snapshot's ingestion time to precede
+the prediction origin. A fixed 30-minute or one-hour delay cannot cover the
+observed exceptions or outages. The forecast mart retains the latest ingestion
+of each publication, not its first arrival, and drops outturn publication time;
+use staging/raw history when reconstructing availability.
+
+### A forecast can cover every target period and still be missing publications
+
+The original audit found 1,655 forecast rows in 30 publication slots on
+23 August, ending at 14:47 UTC, versus 2,816 rows in 48 slots on surrounding
+days. The missing slots ran from 15:17 to 23:47 UTC. On the target side,
+24 August had a median of 40.5 publications and 25 comparable publications,
+against 58 and 43 in the baseline. The observed baseline range was 35–82
+publications per target period; it is not an invariant count.
+
+`no_missing_periods` could not detect this because each target still had at least
+one forecast. A publication-time coverage check is now included, using the
+observed half-hourly cadence from 20 July and warning after two UTC days of grace.
+It detects missing slots, including gaps at the end of the dataset. It does not
+prove that every slot contains all its expected targets, or that the publisher
+will always retain this cadence. The dashboard also shows forecast row counts.
+
+Verification during implementation corrected the chat's claim that timestamps
+always fall at :17/:47. Across July–September they vary, including :16, :18,
+:45 and :48. The check bins actual timestamps into UTC half-hour windows rather
+than expecting an exact minute. Exact-minute matching produced 1,116 false or
+unverified gaps before this correction.
+
+The 23 August repair restored 2,816 rows and all 48 half-hour windows. Three
+empty windows remain on 6 August (10:30, 12:00 and 12:30 UTC). A fresh NDF API
+read from 10:00–14:00 returned exactly the same 511 unique target/publication
+keys as the mart, with no missing or extra keys. Publications instead arrived
+at 13:12, 13:20 and 13:28. These are source-cadence gaps, not evidence that our
+ingestion lost those publications. The warning is retained rather than masking
+the date or inventing forecasts.
+
+The dashboard's demand comparison selects one publication at each requested
+horizon and only scores targets with all six horizons available. It rejects
+forecasts older than 30 minutes at that origin, so an outage cannot silently
+substitute a nine-hour-old forecast. It measures historical publisher accuracy,
+including backfills, rather than replaying the pipeline's live availability.
+
+### Holiday demand differs substantially from nearby weekdays
+
+The audit compared 22 England/Wales bank holidays in 2024–2026 with the same
+weekday within ±28 days, excluding other listed holidays. Mean INDO demand was
+2.4–28.1% lower. Christmas, Boxing Day and New Year were 18.6–28.1% lower;
+Early May was 6.0–6.8% lower. Easter Monday ranged from 3.0% to 18.9% lower.
+
+These are descriptive differences, not causal estimates or fixed forecast
+adjustments. The original query accepted days with at least 44 outturns,
+comparators near the history boundary are one-sided, and the Christmas baseline
+includes other holiday-season weekdays. Weather and year-to-year changes are
+not controlled. A future model should consider nation-specific bank holidays
+and the Christmas/New Year period as calendar features. No holiday feature has
+been added to the spine as part of the dashboard work.
+
+### Limits for future forecasting consumers
+
+- `fct_half_hour` and the regional/mix marts contain latest-known values. Target
+  period demand, mix, price and intensity are not valid advance predictors.
+  Even lagged values need availability checks when revisions or outages matter.
+- National CI ingestion currently uses the current-period and historical range
+  endpoints, not a forward forecast endpoint. Its stored forecast error cannot
+  be interpreted as a day-ahead forecast score.
+- A seven-day UTC lag can shift local clock time across DST. Define how repeated
+  and missing local half-hours are matched before using seasonal lag features.
+- Changing embedded generation means 2024 and 2026 are not interchangeable
+  training populations. Use chronological evaluation and report seasonal errors.

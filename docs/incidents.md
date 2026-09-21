@@ -68,7 +68,7 @@ Two threads left open by the entries above are closed here.
 
 The finding that made it work is worth recording, because the intuitive answer is wrong. Staging models are views over `jsonb_array_elements`, so filtering on `start_time` cannot be evaluated until after the payload has been exploded, while `ingested_at` is a real column on the raw table and filters before it. Same rows out, 344x the work: cost 98,098 against 33,712,757 on the regional generation view. An incremental model keyed on `start_time` would have looked correct and saved nothing.
 
-`fct_demand_forecast_publication` needed more than a filter. Its latest-publication flag is a window over the whole period, and its outturn arrives up to 91.6 hours late, so a batch selected by arrival time never holds everything a period needs. It now replaces whole periods and reads its own earlier rows back for the periods a batch touches.
+`fct_demand_forecast_publication` needed more than a filter. Its latest-publication flag is a window over the whole period, and its outturn was observed arriving up to 91.6 hours late, so a batch selected by arrival time never holds everything a period needs. It now replaces whole periods and reads its own earlier rows back for the periods a batch touches. The September audit established that this delay was ingestion lag, not Elexon's publication latency.
 
 **How it was verified:** a full refresh, then two consecutive incremental runs. All three produced identical row counts and identical checksums on both tables, with exactly one latest-publication flag per period and no settled period missing its outturn.
 
@@ -95,3 +95,32 @@ The reason it did not simply recover is that `deploy/dagster.yaml` configured `Q
 **The number that matters:** a nightly build peaks at **1.9 GB**, measured on the resized machine, running sequentially with a single dbt thread. So the original box did not have slightly too little memory, it had less than half of what one build needs, and could never have completed a nightly run once dbt joined it. That figure also rules out any 2 GiB host as a future home, and means the two builds overlapping would have needed more than 3 GB, which is what `max_concurrent_runs: 1` now prevents.
 
 **Still outstanding:** the swap asset added the previous day checks that swap exists, and would have passed cleanly through this entire incident. Available memory is the thing worth alerting on, and nothing watches it.
+
+## 2026-09-18: August forecast-publication gap recovered
+
+The September audit found a gap left by the August outage: 23 August contained
+1,655 NDF rows in 30 publication windows, ending at 14:47 UTC. Every target
+period still had a forecast, so target-period coverage tests did not detect the
+18 missing publication windows.
+
+**Resolution:** re-fetched the publication interval from 23 August 14:47 to
+24 August 00:17 UTC through the existing append-only ingestion path. Rebuilt
+`fct_demand_forecast_publication` and `fct_half_hour` with one dbt thread.
+Verification found 2,816 rows and all 48 publication windows on 23 August.
+Existing raw snapshots were preserved; recovery does not mean the forecasts
+were available to the pipeline during the outage.
+
+**Changed as a result:** a warning-level publication-window test and a dashboard
+coverage question. The first check expected exact :17/:47 timestamps and
+incorrectly flagged normal minute-level variation. It now checks UTC half-hour
+windows and leaves two UTC days for ingestion and mart refresh.
+
+**Remaining warning:** three empty windows on 6 August also occur in Elexon's
+current source history. The 10:00–14:00 API response and mart contain identical
+sets of 511 unique target/publication keys. Publications bunch around 13:12,
+13:20 and 13:28 instead. No backfill or zero-fill can restore publications the
+source does not provide. The test keeps this discrepancy visible.
+
+The repaired data is in the cloud database. The new test and dashboard code must
+still be deployed through the normal release process; this work did not update
+the VM or commit the changes.

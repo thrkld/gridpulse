@@ -154,7 +154,7 @@ Carbon intensity backfill chunks are split at 1 January before being sent.
 
 `fct_demand_forecast_publication` has a grain of `(start_time, publish_time)` but a `unique_key` of `start_time` alone, and it reads its own previous rows back for the periods a batch touches.
 
-**Why:** Two parts of the model need every publication for a period rather than the ones that happened to arrive together. `is_latest_publication` is a window over the period, so a partial batch marks several rows as latest. The outturn join is the subtler one: the outturn lands up to 91.6 hours after the period, long after publications for it have stopped, so a period reached only through its forecast would keep a null error for good. The batch therefore takes new rows from staging by arrival time, adds the periods' earlier rows back from the table itself, and recomputes over the union. Reading those earlier rows from staging instead would mean filtering on `start_time` and would cost more than a full rebuild.
+**Why:** Two parts of the model need every publication for a period rather than the ones that happened to arrive together. `is_latest_publication` is a window over the period, so a partial batch marks several rows as latest. Outturn ingestion can also arrive after forecasts have stopped, especially during outage recovery, so a period reached only through its forecast would keep a null error. The batch takes new rows from staging by arrival time, adds the periods' earlier rows back from the table itself, and recomputes over the union. The previously quoted 91.6-hour delay was ingestion lag, not Elexon publication latency; see the September audit in probe findings.
 
 **Rejected:** A plain append keyed on the publication grain, which breaks both the flag and the error and is caught by two existing tests; and moving the flag downstream into `fct_half_hour`, which removes a documented column that a dashboard may want.
 
@@ -360,7 +360,7 @@ The Scottish transfer sits in the flow fact with `is_cross_border` false, under 
 
 **Why:** The guards this layer depends on are all written as prose: filter regions to distribution level before averaging, exclude the Scottish boundary from imports, stop lead-time comparisons at 21.75 hours, treat regional intensity as forecast only. A dashboard reads column help text from the database, so without this the warnings reach anybody reading the repository and nobody using the data.
 
-**Rejected:** Repeating the caveats in the dashboard, which puts the same rule in two places and lets them diverge.
+**Rejected:** Keeping model definitions only in dashboard prose, where other database consumers would not see them.
 
 **Status:** implemented.
 
@@ -374,3 +374,69 @@ The Scottish transfer sits in the flow fact with `is_cross_border` false, under 
 
 **Status:** implemented.
 
+## Dashboard
+
+### Questions and layout are provisioned from the repository
+
+`scripts/provision_metabase.py` manages one dedicated collection. It updates
+question SQL, descriptions, chart settings and dashboard layout on every run.
+Existing dashboard-card IDs are reused, and an interrupted layout update is
+repaired by rerunning. Objects outside the managed collection are untouched.
+Question names identify objects within that collection. Known previous names can
+be declared so a rename updates the existing card in place; otherwise a rename
+creates a new question and leaves the old one available for manual cleanup.
+
+**Why:** SQL fixes must reach existing dashboards. A create-only script silently
+left old queries in use after the repository changed.
+
+**Status:** implemented. API keys and database passwords stay in environment
+variables. The script accepts an existing Metabase database ID without changing
+that connection's credentials. For new verified-TLS connections, it uploads a CA
+bundle rather than sending a laptop-only certificate path. Full field-value
+scanning is disabled because the dashboard uses native SQL and does not need a
+scan over the large staging views.
+
+**Verified 2026-09-18:** a disposable instance of the pinned Metabase
+`v0.62.3.6` created all 15 questions and executed them against the cloud marts.
+A second run preserved question and dashboard-card IDs without duplicates;
+clearing the test dashboard's layout and rerunning restored all 15 cards.
+This caught two compatibility issues before use in the main instance: uploaded
+CA certificates need PEM text, and collection pagination can return a null total.
+The repeatable check is in `tests/metabase_api_test.py`. The main dashboard's
+provisioning and visual check remain pending its API key.
+
+### Missing data is visible and comparisons use matched samples
+
+Questions exclude future and current local days; the long-term solar comparison
+uses completed months. Price/carbon comparisons use common periods, country
+comparisons use common half-hours, and demand accuracy uses the same targets at
+all six horizons. Coverage cards retain expected periods from the spine and
+publication slots from the observed NDF cadence. Import ratios require all ten
+cross-border links, rather than relying on the wide mart's null-to-zero flow
+fallback. Carbon/price alignment uses the same matched periods for both average
+profiles. The overlap card compares each day's cheapest 12 half-hours with its
+lowest-carbon 12, then averages the shared fraction across complete,
+non-clock-change days. Boundary ties receive fractional membership; multiplying
+the two memberships gives expected overlap if ties are resolved independently.
+This keeps each quarter at 12 periods without arbitrary ordering. The result is
+descriptive, not a significance test or an absolute low-carbon threshold.
+
+**Why:** The sources have different outages and settlement delays. Averaging
+each metric independently can compare different samples while appearing to show
+the same population. Missing source values are not zero-filled or patched from
+NESO's differently defined historic generation dataset.
+
+**Status:** implemented. Query-specific caveats are included in card descriptions
+because native SQL charts cannot rely on users discovering database column help.
+
+### The midday solar chart adds back solar only
+
+The original question asks how embedded solar has hollowed out midday demand.
+The chart therefore compares national demand with national demand plus estimated
+embedded solar, using the same half-hours between 11:00 and 15:00 London time
+in completed months. Wind is excluded from both the adjustment and the
+missing-value filter. The adjusted line is labelled "Demand plus embedded solar",
+since it does not estimate total consumption or establish how demand would
+change if solar were absent. The mart's separate underlying-demand estimate
+still includes wind and solar. Historical solar revision differences documented
+in the dashboard audit remain a limitation of trend comparisons.
