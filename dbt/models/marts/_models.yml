@@ -129,11 +129,11 @@ models:
 
   - name: fct_demand_forecast_publication
     description: >
-      One row per settlement period per forecast publication, so roughly 59 rows
+      One row per settlement period per forecast publication, with a measured median of 58 rows
       per period. Keeping every publication is what makes forecast accuracy
       measurable against how far ahead the call was made.
       Built incrementally on arrival time with a five day lookback, which is set by
-      how late the outturn lands rather than by any revision. Whole periods are
+      delayed ingestion and catch-up rather than publication latency. Whole periods are
       replaced rather than individual publications, because the latest-publication
       flag needs to see all of a period's rows at once.
       Elexon stops publishing at a fixed time of day rather than at a fixed lead,
@@ -227,6 +227,10 @@ models:
       One row per UTC half hour carrying every source, resolved to the latest known
       value. Built from the spine and bounded to the range the sources cover, so a
       period nobody published survives as nulls rather than disappearing.
+      This is a retrospective table, not an as-of feature store. Historical values
+      can include revisions or backfills unavailable at a past prediction time.
+      Reconstruct such features from staging snapshots using publication and
+      ingestion timestamps; lagging this table alone does not ensure availability.
       Two demand actuals sit side by side on purpose: NESO's national demand has
       history back to 2024 and drives the demand and imports questions, while
       Elexon's outturn is the like-for-like comparison for Elexon's own forecast.

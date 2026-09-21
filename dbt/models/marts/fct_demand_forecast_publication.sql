@@ -19,8 +19,9 @@
     by arrival time never holds them all. The missing ones come from this table
     rather than from staging, which is what keeps it cheap.
 
-    Five days of lookback, set by how late the outturn arrives rather than by any
-    revision: the slowest observed was 91.6 hours.
+    Five days of arrival-time overlap accommodates delayed ingestion and catch-up.
+    The earlier 91.6-hour observation was pipeline lag, not publication latency.
+    Backfills arrive with a new ingested_at even when their target periods are old.
 #}
 {% set lookback = "interval '5 days'" %}
 
@@ -42,9 +43,8 @@ new_outturn as (
 ),
 
 {% if is_incremental() %}
--- every period either side has touched. The outturn half earns its place: it lands
--- days after the period, long after publications for it have stopped, so a period
--- reached only through its forecast would keep a null error_mw forever
+-- Include periods touched by outturn ingestion, even if their forecasts stopped
+-- arriving earlier. Otherwise a late outturn could leave error_mw null forever.
 affected as (
     select start_time from new_forecast
     union
@@ -87,9 +87,8 @@ outturn as (
         from new_outturn
         {% if is_incremental() %}
         union all
-        -- resolved on an earlier run. Outturn never changes once published, so a
-        -- carried value is as good as a re-read one, and the null publish_time
-        -- sorts it behind anything the source has just sent
+        -- No INDO value revisions were observed in the September 2026 audit.
+        -- Prefer newly fetched outturns to carried values if a revision does arrive.
         select start_time, demand_outturn_mw, null::timestamptz, ingested_at
         from carried
         where demand_outturn_mw is not null
