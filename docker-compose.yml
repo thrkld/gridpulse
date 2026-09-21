@@ -10,10 +10,13 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
   metabase:
-    image: metabase/metabase
+    # Keep the dashboard API version consistent across installs.
+    image: metabase/metabase:v0.62.3.6
     ports:
+      # Leave port 3000 available for Dagster.
       - "3002:3000"
     volumes:
+      # Persist accounts, questions and dashboards across container replacements.
       - metabase-data:/metabase.db
     depends_on:
       - postgres
@@ -21,5 +24,3 @@ services:
 volumes:
   pgdata:
   metabase-data:
-
-
