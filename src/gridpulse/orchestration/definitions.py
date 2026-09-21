@@ -3,6 +3,7 @@ from pathlib import Path
 from dagster import (
     AssetExecutionContext,
     AssetKey,
+    DefaultScheduleStatus,
     Definitions,
     ScheduleDefinition,
     asset,
@@ -12,6 +13,7 @@ from dagster_dbt import (
     DbtProject,
     build_schedule_from_dbt_selection,
     dbt_assets,
+    get_asset_key_for_model,
 )
 
 from gridpulse.health import check_swap
@@ -79,6 +81,27 @@ def host_has_swap():
     check_swap()
 
 
+# The static dashboard: renders the Metabase questions to PNGs and pushes one page
+# to the dashboard repository. Depends on the marts it reads so the graph shows the
+# page as a consumer of the pipeline. The import is inside the function because
+# matplotlib is only wanted in the run worker, never in the webserver or daemon.
+@asset(
+    deps=[
+        get_asset_key_for_model([gridpulse_dbt_assets], model)
+        for model in (
+            "fct_half_hour",
+            "fct_demand_forecast_publication",
+            "fct_interconnector_flow",
+            "fct_regional",
+        )
+    ]
+)
+def dashboard_site():
+    from gridpulse.charts.site import publish_dashboard
+
+    publish_dashboard()
+
+
 half_hourly_schedule = ScheduleDefinition(
     name="half_hourly_refresh",
     cron_schedule="*/30 * * * *",  # Runs every 30min
@@ -120,6 +143,17 @@ six_hourly_dbt_schedule = build_schedule_from_dbt_selection(
     execution_timezone="UTC",
 )
 
+# Thirty minutes after each six-hourly mart build, which takes about 93 seconds.
+# Starts enabled: a new schedule otherwise arrives stopped, and a dashboard that
+# silently stops rebuilding is the failure this schedule exists to make visible
+dashboard_schedule = ScheduleDefinition(
+    name="publish_dashboard",
+    cron_schedule="50 2,8,14,20 * * *",
+    target=[dashboard_site],
+    execution_timezone="UTC",
+    default_status=DefaultScheduleStatus.RUNNING,
+)
+
 nightly_dbt_schedule = build_schedule_from_dbt_selection(
     [gridpulse_dbt_assets],
     job_name="nightly_dbt_build",
@@ -138,6 +172,7 @@ defs = Definitions(
         weekly_schedule,
         six_hourly_dbt_schedule,
         nightly_dbt_schedule,
+        dashboard_schedule,
     ],
     assets=[
         gridpulse_dbt_assets,
@@ -148,6 +183,7 @@ defs = Definitions(
         elexon_sweep_interim_raw,
         neso_latest_raw,
         host_has_swap,
+        dashboard_site,
     ],
     resources={"dbt": DbtCliResource(project_dir=DBT_PROJECT)},
 )

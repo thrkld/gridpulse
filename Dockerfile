@@ -4,6 +4,8 @@ WORKDIR /app
 COPY requirements.txt requirements-dbt.txt pyproject.toml ./
 COPY src/ ./src/
 COPY dbt/ ./dbt/
+# the dashboard renders the same SQL the Metabase questions use
+COPY scripts/metabase/ ./scripts/metabase/
 RUN pip install --no-cache-dir -r requirements.txt -r requirements-dbt.txt -e .
 
 # dbt looks in ~/.dbt by default, which does not exist here

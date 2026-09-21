@@ -3,6 +3,7 @@
 docs/
 tests/
 scripts/
+!scripts/metabase/
 *.log
 __pycache__/
 dbt/target/
