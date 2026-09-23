@@ -1,14 +1,8 @@
-"""Build the static page and push it to the dashboard repository.
+"""Build an HTML report and publish through GitHub's Git Data API.
 
-The page is plain HTML with the PNGs beside it and the numbers behind each chart
-in a table, so nothing on it needs JavaScript to read. The one script it carries
-turns the freshness banner amber when the build is more than twelve hours old,
-which is how a stalled pipeline becomes visible from the outside.
-
-Publishing uses GitHub's Git Data API through `requests`, which the project
-already depends on, so the image needs no git binary and no checkout. The tree
-is built from scratch on every run; GitHub derives its SHA from the contents,
-so an unchanged site is detected before any commit is made.
+Publishing replaces managed paths while preserving other repository files.
+Charts, findings and tables are readable without JavaScript; JavaScript adds
+an age warning for the build and most recent source ingestion.
 """
 
 import base64
@@ -22,7 +16,7 @@ from pathlib import Path
 import requests
 
 from gridpulse.charts import queries
-from gridpulse.charts.render import CHARTS, Chart, stamp_text
+from gridpulse.charts.render import CHART_GROUPS, CHARTS, Chart, stamp_text
 
 REPO_URL = "https://github.com/thrkld/gridpulse"
 IMAGE_DIR = "charts"  # the one directory the publisher owns outright
@@ -78,6 +72,8 @@ body { margin: 0; background: var(--page); color: var(--ink);
 main { max-width: 880px; margin: 0 auto; padding: 24px 16px 48px; }
 h1 { font-size: 1.6rem; margin: 0 0 4px; }
 h2 { font-size: 1.15rem; margin: 0 0 8px; }
+.chart-title { font-size: 1.15rem; margin: 0 0 8px; }
+h3, h4 { font-size: 0.95rem; margin: 18px 0 6px; }
 p { margin: 0 0 8px; }
 .lede, .caveat, .meta { color: var(--ink-2); }
 .caveat, .meta { font-size: 0.9rem; }
@@ -85,9 +81,23 @@ p { margin: 0 0 8px; }
   margin: 16px 0 28px; font-size: 0.9rem; color: var(--ink-2); }
 .banner.stale { border-color: var(--amber); }
 .banner.stale::before { content: "⚠ "; }
-.chart { margin: 0 0 40px; }
-.chart img { display: block; width: 100%; height: auto; border-radius: 6px;
+.chart { margin: 0 0 48px; padding-top: 24px; border-top: 1px solid var(--line); }
+.chart img { display: block; box-sizing: border-box; width: 100%; height: auto; border-radius: 6px;
   background: #fcfcfb; border: 1px solid var(--line); margin: 8px 0 10px; }
+.finding { border-left: 3px solid #2a78d6; padding: 2px 0 2px 16px; margin: 20px 0; }
+.finding h4 { margin-top: 0; }
+.overview { margin: 20px 0; }
+.overview ul { padding-left: 22px; }
+.overview li { margin-bottom: 14px; }
+.overview a { font-weight: 600; }
+nav { margin: 20px 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 24px; }
+@media (max-width: 600px) { nav { grid-template-columns: 1fr; } }
+nav ul { margin: 6px 0 14px; padding-left: 22px; }
+nav li { margin: 4px 0; }
+.topic-heading { font-size: 1.4rem; margin: 44px 0 16px; scroll-margin-top: 16px; }
+.chart { scroll-margin-top: 16px; }
+.provenance { margin: 20px 0; }
+.table-scroll { overflow-x: auto; }
 details { margin-top: 6px; font-size: 0.9rem; }
 summary { cursor: pointer; color: var(--ink-2); }
 table { border-collapse: collapse; margin-top: 8px; font-variant-numeric: tabular-nums; }
@@ -98,10 +108,7 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
 a { color: inherit; }
 """
 
-# Two ages, because they fail differently: an old build means publishing stopped;
-# old data under a fresh build means ingestion or the mart build stopped while
-# publishing carried on. The data timestamp comes from the marts, so it only
-# advances when both ingestion and dbt have run
+# This aggregate timestamp cannot detect a single stale source while others update.
 SCRIPT = (
     """
 (function () {
@@ -110,7 +117,7 @@ SCRIPT = (
   var built = (Date.now() - Date.parse(banner.dataset.built)) / 36e5;
   var data = (Date.now() - Date.parse(banner.dataset.ingested)) / 36e5;
   var problem = data > limit
-    ? "The data behind it is " + Math.round(data) + " hours old, so updates may be delayed."
+    ? "The most recent source ingestion is " + Math.round(data) + " hours old, so updates may be delayed."
     : built > limit ? "It was built " + Math.round(built) + " hours ago, so updates may be delayed." : null;
   if (problem) { banner.classList.add("stale"); banner.append(" This page is older than expected. " + problem); }
 })();
@@ -141,15 +148,55 @@ def _table(columns: list[str], rows: list[dict]) -> str:
 def build_page(rendered: list[Rendered], meta: dict, built_at: datetime) -> str:
     built = built_at.astimezone(UTC)
     ingested = meta["ingested_to"].astimezone(UTC)
-    cards = "\n".join(
-        f"""<section class="chart" id="{r.chart.key}">
-<h2>{html.escape(r.chart.title)}</h2>
-<img src="{IMAGE_DIR}/{r.chart.key}.png" alt="{html.escape(r.chart.title)}">
-<p>{html.escape(r.headline)}</p>
-<p class="caveat">{html.escape(r.chart.caveat)}</p>
-<details><summary>Numbers behind the chart</summary>{_table(r.columns, r.rows)}</details>
-</section>"""
+    findings_date = built.strftime("%d %B %Y").lstrip("0")
+    highlights = "\n".join(
+        f'<li><a href="#{r.chart.key}">{html.escape(r.chart.title)}</a>'
+        f"<p>{html.escape(r.headline)}</p></li>"
         for r in rendered
+        if r.chart.key in {"daily_pattern", "demand_accuracy", "negative_frequency"}
+    )
+    by_key = {r.chart.key: r for r in rendered}
+    groups = [
+        (key, title, [by_key[k] for k in keys if k in by_key])
+        for key, title, keys in CHART_GROUPS
+    ]
+    groups = [(key, title, charts) for key, title, charts in groups if charts]
+    navigation = "\n".join(
+        f'<div><a href="#{key}"><strong>{html.escape(title)}</strong></a><ul>'
+        + "".join(
+            f'<li><a href="#{r.chart.key}">{html.escape(r.chart.title)}</a></li>'
+            for r in charts
+        )
+        + "</ul></div>"
+        for key, title, charts in groups
+    )
+    group_starts = {charts[0].chart.key: (key, title) for key, title, charts in groups}
+
+    def group_heading(r):
+        if r.chart.key not in group_starts:
+            return ""
+        key, title = group_starts[r.chart.key]
+        return f'<h2 class="topic-heading" id="{key}">{html.escape(title)}</h2>'
+
+    cards = "\n".join(
+        group_heading(r)
+        + f"""<section class="chart" id="{r.chart.key}">
+<h3 class="chart-title">{html.escape(r.chart.title)}</h3>
+<h4>What this graph shows</h4>
+<p>{html.escape(r.chart.what_shows)}</p>
+<div class="finding">
+<h4>Findings (as of {findings_date})</h4>
+<p>{html.escape(r.headline)}</p>
+</div>
+<a href="{IMAGE_DIR}/{r.chart.key}.png" aria-label="View full-size chart: {html.escape(r.chart.title)}"><img src="{IMAGE_DIR}/{r.chart.key}.png" alt="{html.escape(r.chart.title)}"></a>
+<p class="meta"><a href="{IMAGE_DIR}/{r.chart.key}.png">Open full-size chart</a></p>
+<h4>Limitations</h4>
+<p class="caveat">{html.escape(r.chart.caveat)}</p>
+<details><summary>How to read this graph and methodology</summary><p>{html.escape(r.chart.description)}</p></details>
+<details><summary>Numbers behind the chart</summary><div class="table-scroll" tabindex="0" role="region" aria-label="Data for {html.escape(r.chart.title)}">{_table(r.columns, r.rows)}</div></details>
+</section>"""
+        for _, _, charts in groups
+        for r in charts
     )
     return f"""<!doctype html>
 <html lang="en-GB">
@@ -157,21 +204,34 @@ def build_page(rendered: list[Rendered], meta: dict, built_at: datetime) -> str:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GridPulse dashboard</title>
-<meta name="description" content="UK electricity: carbon, price and demand since 2024, rebuilt from the GridPulse marts every six hours.">
+<meta name="description" content="Great Britain's electricity in {len(rendered)} analyses: carbon intensity, wholesale prices, demand and forecast accuracy, with data since 2024.">
 <style>{STYLE}</style>
 </head>
 <body>
 <main>
 <h1>GridPulse</h1>
-<p class="lede">GB electricity since 2024: carbon intensity, wholesale price, demand and the forecasts for them,
-from three public APIs through Postgres and dbt. <a href="{REPO_URL}">Source and design notes on GitHub.</a></p>
+<p class="lede">Great Britain's electricity: when it is lower-carbon, how prices vary,
+how electricity flows across borders, and how accurately demand is forecast.</p>
+<section class="overview" aria-labelledby="key-findings">
+<h2 id="key-findings">Key findings · {findings_date}</h2>
+<ul>{highlights}</ul>
+</section>
+<details class="contents" open><summary>Explore {len(rendered)} analyses by topic</summary>
+<nav aria-label="Analyses by topic">{navigation}</nav></details>
 <p class="banner" id="built" data-built="{built:%Y-%m-%dT%H:%M:%SZ}" data-ingested="{ingested:%Y-%m-%dT%H:%M:%SZ}">
-Built {built:%Y-%m-%d %H:%M} UTC from data to {meta["data_to"]:%Y-%m-%d} (London dates),
-sources ingested to {ingested:%Y-%m-%d %H:%M} UTC.
-Rebuilds every {REBUILD_HOURS} hours after the marts refresh.</p>
+Analysis built {built:%Y-%m-%d %H:%M} UTC. Each chart uses its stated window;
+current-month results are provisional. Scheduled refresh: every {REBUILD_HOURS} hours.</p>
+<details class="provenance"><summary>Data dates and source code</summary>
+<p class="meta">National carbon actuals: data to {meta["data_to"]:%Y-%m-%d} (London dates).
+Most recent ingestion across sources: {ingested:%Y-%m-%d %H:%M} UTC.
+These timestamps do not establish completeness or freshness for every source.
+“As of” refers to the build date. Select a chart to view it full size.</p>
+<a href="{REPO_URL}">Python, SQL and dbt project on GitHub</a></details>
 {cards}
 <footer>Data: Elexon BMRS (© Elexon Limited, BMRS data licence), Carbon Intensity API (CC BY 4.0), NESO Data Portal (NESO Open Licence).
-Charts are averages over the stated windows; each caveat says what would make one misleading.</footer>
+Charts summarise the stated periods; the notes explain how to interpret each measure.
+Carbon intensity is measured in grams of CO₂ per kilowatt-hour (gCO₂/kWh), prices in pounds per
+megawatt-hour (£/MWh), and demand in megawatts (MW) or gigawatts (GW).</footer>
 </main>
 <script>{SCRIPT}</script>
 </body>

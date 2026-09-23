@@ -176,8 +176,10 @@ QUESTIONS = [
         "solar",
         "Midday National Demand and Embedded Solar",
         "Monthly averages between 11:00 and 15:00 London time, for completed months since 2024. "
-        "Demand plus embedded solar adds estimated solar generation to national demand; "
-        "the gap represents solar alone. Compare the same month across years.",
+        "National demand already reflects the reduction from embedded solar. "
+        "Demand plus embedded solar adds that estimate back; subtracting it would "
+        "count the reduction twice. The sum excludes other embedded generation, "
+        "so it is not total consumption. Compare the same month across years.",
         "line",
         "Month",
         ["National demand MW", "Demand plus embedded solar MW", "Embedded solar MW"],

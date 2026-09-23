@@ -7,9 +7,8 @@ from gridpulse.ingest.load import get_connection
 # Shared with scripts/provision_metabase.py: one query per question, read as text
 SQL_DIR = Path(__file__).resolve().parents[3] / "scripts" / "metabase"
 
-# What every stamp and the page banner state. The data date comes from the marts
-# rather than the clock, so a stalled pipeline shows as old data rather than as a
-# fresh-looking page
+# Carbon's latest observation date and the newest ingestion across sources.
+# Neither establishes completeness or freshness for each individual source.
 META_SQL = """
 select
     max(london_date) filter (where intensity_actual is not null) as data_to,
