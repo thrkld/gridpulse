@@ -1,46 +1,110 @@
 # GridPulse
 
+**Electricity data analytics for Great Britain: carbon intensity, wholesale prices and demand forecast accuracy, backed by a reproducible Python, SQL and dbt pipeline.**
+
 [![CI](https://github.com/thrkld/gridpulse/actions/workflows/ci.yml/badge.svg)](https://github.com/thrkld/gridpulse/actions/workflows/ci.yml)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](pyproject.toml)
+[![dbt](https://img.shields.io/badge/dbt-9%20staging%20%C2%B7%206%20marts-orange)](dbt/models)
+[![Licence](https://img.shields.io/badge/licence-MIT-green)](LICENSE)
 
-GridPulse is an ELT pipeline for UK electricity data. It ingests carbon intensity, national demand and wholesale and imbalance prices into Postgres as raw JSON, and then models that data with dbt.
+## Findings · 22 September 2026
 
-## What it answers
+**[Read the 14-chart analysis](docs/findings.md)** — figures, explanations and
+limitations are available here without installing anything.
 
-- When are the greenest and cheapest half hours, and how closely do their daily patterns align?
-- How accurate do the carbon intensity and demand forecasts turn out to be once the actual figures land?
-- How do imbalance prices move as demand and the renewables share change?
-- How large are net interconnector imports relative to GB national demand?
-- When does the price of power go negative, and what is the grid doing when it happens?
-- How far does the imbalance price differ from the wholesale price?
-- How have midday demand and estimated embedded solar changed since 2024?
-- How different are the nations' grids from one another?
+- **Daily timing:** average carbon intensity was lowest at **13:00
+  (108 gCO₂/kWh)**; the lowest average APX wholesale price occurred at **03:30
+  (£67.98/MWh)**. Their average minima differ; this does not establish daily
+  coincidence. [See the chart](docs/findings.md#daily-pattern).
+- **Forecast accuracy:** average demand forecast error was **504 MW at 30 minutes** versus
+  **653 MW at 21 hours**, scored on the same **35,466 half hours**. Forecasts made closer to the predicted half hour were more accurate on this matched sample.
+  [See the chart](docs/findings.md#demand-accuracy).
+- **Negative prices:** **1,322 of 47,734 priced half hours (2.8%)** had a negative
+  APX wholesale price since 2024. Missing prices are excluded; the current month
+  is partial. [See the chart](docs/findings.md#negative-price-frequency).
+
+These findings are a dated snapshot, not live readings. The full report also
+groups the analysis into daily patterns, electricity supply and trade, prices,
+forecast accuracy and data quality. It includes country imports and exports,
+imbalance versus wholesale prices, price conditions and coverage checks.
+Metabase offers the same measures for further exploration.
+
+[![Demand forecast error at six advance timings, snapshot from 22 September 2026](docs/images/findings-2026-09-22/demand_accuracy.png)](docs/findings.md#demand-accuracy)
+
+The generated dashboard presents the same analyses with expandable methods and
+data tables. **Public deployment is pending:** its configured destination is
+[GitHub Pages](https://thrkld.github.io/gridpulse-dashboard/). The report above is
+available independently of that deployment.
+
+## Analytical approach
+
+- Compare carbon and prices on matched half hours, and forecasts made different numbers of hours ahead on the
+  same target periods.
+- Keep missing values distinct from zero and define the denominator for every
+  rate or ratio.
+- Preserve forecast publications for historical accuracy evaluation, and
+  distinguish estimates, forecasts and observed values.
+- Audit source revisions and coverage before interpreting changes. See the
+  [data audit](docs/dashboard_data_audit.md) for evidence and limitations.
 
 ## Architecture
 
-![Architecture Diagram](docs/images/gridpulse%20architecture%20dark.png)
+```mermaid
+flowchart TB
+    subgraph SRC["Public APIs"]
+        CI["Carbon Intensity API<br/>intensity · mix · regional"]
+        NESO["NESO Data Portal<br/>demand · embedded · flows"]
+        ELX["Elexon BMRS<br/>prices · forecast · outturn"]
+    end
 
-The **raw** layer stores API responses as JSONB exactly as they arrived, and it is append only. Every ingestion is a snapshot, and nothing is ever updated or deleted, which is what makes re-runs and backfills safe to repeat and what preserves forecast revisions as history rather than overwriting them.
+    ING["Python ingestion<br/>latest · sweeps · backfill"]
+    RAW[("Postgres raw<br/>append-only JSONB snapshots")]
+    STG["dbt staging · 9 views<br/>JSON unpacked, typed, UTC"]
 
-The **staging** layer puts one dbt view over each source endpoint. Those views unpack the JSON, tidy up the types and derive the UTC settlement fields, but they do no logic that spans tables.
+    subgraph MARTS["dbt marts · UTC half hours and forecast publications"]
+        DIM["dim_settlement_period<br/>generated half-hour spine"]
+        FCT["fct_half_hour (wide)<br/>fct_generation_mix<br/>fct_regional<br/>fct_interconnector_flow<br/>fct_demand_forecast_publication"]
+        DIM --> FCT
+    end
 
-The **marts** layer is six tables keyed on the UTC half hour. Each one deduplicates its sources down to their latest known value and then joins them together: a settlement-period spine, a wide fact carrying every source on one row, and four facts at their own grain for the generation mix, forecast publications, regions and interconnectors. The reasoning behind that shape, along with the alternatives that were rejected, sits in [docs/decisions.md](docs/decisions.md).
+    WEB["Static page · GitHub Pages<br/>14 analyses, separate repo"]
+    MB["Metabase (local)<br/>15 provisioned questions"]
+    DAG["Dagster<br/>7 schedules"]
 
-## Where it runs
+    CI --> ING
+    NESO --> ING
+    ELX --> ING
+    ING --> RAW
+    RAW --> STG
+    STG --> FCT
+    FCT --> WEB
+    FCT --> MB
 
-Ingestion and transformation both run unattended in the cloud. Dagster schedules them from an Azure VM, and the data lands in an Azure Database for PostgreSQL server in the same region. Dagster keeps its own run and schedule history in a second database on that same server, so restarting the containers does not lose any of it.
+    DAG -.-> ING
+    DAG -.-> STG
+    DAG -.-> WEB
+```
 
-| Schedule | Cadence | What it does |
-|---|---|---|
-| `half_hourly_refresh` | every 30 min | latest carbon intensity and Elexon |
-| `twice_daily_refresh` | 10:00 and 22:00 UTC | full NESO snapshot |
-| `daily_sweep` | 00:15 UTC | carbon intensity trailing 48 h, Elexon interim settlement 7 d |
-| `weekly_sweep` | 00:45 Sunday | Elexon initial settlement, trailing 35 d |
-| `six_hourly_dbt_build` | 02:20, 08:20, 14:20, 20:20 UTC | all six marts and their tests, 93 seconds |
-| `nightly_dbt_build` | 04:00 UTC | every model and its tests (203 in the current project) |
+The **raw** layer preserves append-only API snapshots in PostgreSQL JSONB.
+**Staging** views unpack and type the data and normalise settlement times to UTC.
+The six **marts** include a generated settlement-period spine and facts for joined
+half-hour observations, generation mix, regions, interconnectors and forecasts.
+Observation facts resolve source revisions at their own grain; the forecast fact
+retains each publication for a target half hour so comparisons of forecasts made different numbers of hours ahead remain
+possible. [Design decisions](docs/decisions.md) explain the trade-offs.
 
-The dbt project is loaded through `dagster-dbt`, so each model and test is an asset rather than one opaque step, and the raw assets are keyed to match dbt's source names. That makes the graph a single unbroken lineage from the API call through to the mart, instead of two halves that happen to run in order.
+Matplotlib and Metabase share the analytical SQL in `scripts/metabase/`.
+The static report is readable without JavaScript; its optional freshness warning
+checks the build age and newest source ingestion. It does not establish freshness
+for every individual source. Metabase provides local exploration through
+repository-managed questions.
 
-The same code also runs locally against the Postgres in `docker-compose.yml`, because the connection details are read from the environment rather than hardcoded. Anything that has gone wrong since the first scheduled run is written down in [docs/incidents.md](docs/incidents.md).
+## Operations
+
+Python ingestion and dbt transformations run on an Azure VM with Azure Database
+for PostgreSQL. Dagster coordinates ingestion, revision sweeps and model builds.
+Dashboard publishing is implemented with a six-hourly schedule; the first deployed
+publish remains pending. See [deployment and schedules](docs/operations.md).
 
 ## Dealing with different 'clocks'
 
@@ -54,9 +118,8 @@ Carbon Intensity and Elexon both publish UTC instants, but NESO publishes a *loc
 | [NESO Data Portal](https://www.neso.energy/data-portal) | national demand, embedded generation, interconnector flows | one call per year against the historic demand resources, from 2024-01-01 | 2x daily full snapshot | built in: the live feed is a rolling window, so every fetch re-captures the full revision period |
 | [Elexon BMRS](https://bmrs.elexon.co.uk/) | imbalance prices, market index, demand forecast and outturn | backfill from 2024-01-01: one call per settlement date for imbalance and one per day of publications for the forecast | every 30 min | daily trailing 7 days (interim settlement run) and weekly trailing 35 days (initial settlement run); later reconciliation runs are out of scope by design |
 
-Every source keeps revising its data after first publishing it, so past periods have to be fetched again until they settle. Each fetch lands as another append-only snapshot, and the marts resolve each settlement period down to its latest value, which is what makes the sweeps and backfills safe to run as many times as you like.
-
-The demand forecast is worth calling out, because Elexon republishes it roughly 59 times per period as that period approaches. All of those publications are kept rather than only the last one, which is what makes it possible to measure how the forecast improves with less time to run.
+Revision sweeps append new snapshots; observation models select the latest
+version while the demand-forecast model retains publication history.
 
 ## Running it
 
@@ -79,7 +142,7 @@ python -m gridpulse.ingest.run_elexon
 # historical load, run once per database
 python scripts/backfill.py
 
-# orchestration (schedules ingestion and dbt per the data sources table)
+# orchestration (schedules ingestion, dbt and publishing per the table above)
 dagster dev -f src/gridpulse/orchestration/definitions.py -p 3001
 
 # transformations
@@ -96,124 +159,40 @@ set -a && . .env && set +a
 cd dbt && DBT_TARGET=prod dbt build
 ```
 
-## Metabase dashboard
-
-The Compose stack serves Metabase at <http://localhost:3002>. Finish its first-run
-setup, then create an API key in **Admin → Settings → Authentication → API keys**.
-The key needs permission to manage the database connection, collection and questions;
-an administrator key can provision the full setup. Keep it in the gitignored `.env`:
-
-```dotenv
-METABASE_URL=http://localhost:3002
-METABASE_API_KEY=your-key
-```
-
-From the repository root, after building the marts:
-
-```bash
-python scripts/provision_metabase.py --verify
-```
-
-The script creates a `GridPulse (managed)` collection and prints the dashboard URL.
-Rerunning updates SQL, descriptions, chart settings and layout, including recovery
-after a partially completed run. It leaves other collections and dashboards alone.
-Treat the managed collection as repository-owned: manual layout changes there will
-be replaced. Question names are identifiers. A declared previous name is migrated
-in place; an undeclared rename leaves the old question available for manual cleanup.
-
-For an existing Metabase database connection, set `METABASE_DATABASE_ID` to its
-numeric ID. Otherwise the script reuses a connection named `GridPulse marts`, or
-creates one from `PG*`. It does not update an existing connection's credentials.
-For local Docker data, set `METABASE_PGHOST=postgres` and
-`METABASE_PGSSLMODE=disable`; the password defaults to `POSTGRES_PASSWORD`.
-`localhost` inside Metabase is the Metabase container, not the database container.
-Hosted connections must be reachable from Docker and allowed through any firewall.
-For `verify-full` or `verify-ca`, the script uploads the CA bundle from
-`METABASE_PGSSLROOTCERT`, `PGSSLROOTCERT`, or certifi (in that order), because a
-certificate path on your laptop is not a path inside the Metabase container.
-New connections disable full field-value scanning; native SQL questions do not
-need Metabase to scan every raw and staging column.
-Use a read-only database account for ongoing dashboard access.
-
-The 15 questions cover the original analytical questions and expose coverage:
-
-| Question | Dashboard evidence |
-|---|---|
-| Greenest versus cheapest | Matched daily-pattern charts and overlap between each day's cheapest and lowest-carbon quarters |
-| Forecast accuracy | Carbon MAE by month; NDF MAE at six horizons on the same target periods |
-| Imbalance and grid conditions | Demand/renewables bins with sample counts |
-| Imports | Net cross-border flow relative to demand; country totals sum links before averaging |
-| Negative prices | Monthly frequency among known prices, plus matched grid conditions |
-| Imbalance versus wholesale | Signed and absolute price spreads, not a participant's realised cash cost |
-| Midday solar | Completed-month national demand, estimated embedded solar and demand with solar added back; not a causal estimate |
-| Nations | England, Scotland and Wales on common half-hours; regional intensity is forecast-only |
-
-Monthly field coverage and daily NDF publication coverage accompany the charts.
-Permanent source gaps remain missing. The demand chart measures historical
-publisher accuracy, including recovered publications; it does not replay what this
-pipeline knew at the time. Carbon ingestion does not retain fixed-horizon forecast
-vintages. The marts refresh every six hours, so this is not a live dashboard.
-See [probe findings](docs/probe_findings.md) for the source limitations and
-[incidents](docs/incidents.md) for recovered outages.
-
-The Metabase image is pinned and its application state is persisted in a Docker
-volume. That volume is not a backup; this local Compose setup is not a hardened
-public deployment.
+Once the marts exist, `python -m gridpulse.charts site --out build/site` writes the dashboard page and its PNGs locally, without publishing anything. Publishing additionally needs `DASHBOARD_REPO` and a fine-grained `DASHBOARD_TOKEN` holding contents write on the dashboard repository alone. Metabase setup is in [docs/metabase.md](docs/metabase.md).
 
 ## Testing
 
-**pytest** covers the settlement-period conversion including the days the clocks change, the backfill chunking and the date ranges it produces, the sweep windows, how failed requests are retried, and how the database connection is resolved from the environment. Dashboard tests cover update/recovery behaviour, scope protection and chart definitions. PostgreSQL fixtures check missing-value denominators, matched samples, forecast horizons, flow aggregation, carbon/price alignment and publication windows.
+**pytest** covers the settlement-period conversion including the days the clocks change, the backfill chunking and the date ranges it produces, the sweep windows, how failed requests are retried, and how the database connection is resolved from the environment. Dashboard tests cover update/recovery behaviour, scope protection and chart definitions. PostgreSQL fixtures check missing-value denominators, matched samples, forecast timings, flow aggregation, carbon/price alignment and publication windows.
 
 **dbt** defines 203 tests across staging and marts. Those check the grain of each model is unique, that null constraints have a severity matching how load-bearing the column is, that values fall in accepted ranges, and that no model has silently lost periods, because a table with holes in it passes every test that only examines rows which exist. The NDF publication-window test warns after a two-UTC-day grace period; it can flag source delays as well as ingestion gaps and needs investigation, not automatic zero-filling.
 
-**CI** runs pytest and ruff, both format and lint, on every push and pull request.
+**CI** runs pytest and ruff, both format and lint, on every push and pull request, and builds every dbt model against an empty Postgres.
 
 ```
 make check # See 'Makefile' for specific format of tests
 cd dbt && dbt build
 ```
 
-SQL fixture tests skip unless `GRIDPULSE_TEST_POSTGRES` is set to a disposable
-PostgreSQL connection string. They create only temporary tables, exclude `public`
-from the search path, and roll back every transaction. CI runs these against its
-Postgres service:
+The SQL fixture tests and the Metabase end-to-end test need external services and are described in [docs/metabase.md](docs/metabase.md#integration-tests).
 
-```bash
-GRIDPULSE_TEST_POSTGRES='postgresql://user:password@localhost:5432/testdb' pytest tests/metabase_sql_test.py
-```
+## Documentation
 
-An optional end-to-end test provisions a **fresh, disposable** Metabase instance,
-executes every question, reruns provisioning and checks recovery from an empty
-dashboard. It refuses an already configured instance. It uses the usual `PG*` or
-`METABASE_PG*` connection settings; queries require the marts to exist:
+| Document | What is in it |
+|---|---|
+| [decisions.md](docs/decisions.md) | Every design decision, what was rejected in its place, and its current status |
+| [incidents.md](docs/incidents.md) | Operational history since the first unattended run, and what changed after each one |
+| [probe_findings.md](docs/probe_findings.md) | What each source actually publishes, its latency, and its permanent gaps |
+| [dashboard_data_audit.md](docs/dashboard_data_audit.md) | Audit of the figures behind every dashboard question |
+| [metabase.md](docs/metabase.md) | Provisioning the local Metabase dashboard, and the integration tests |
+| [operations.md](docs/operations.md) | Deployment and schedule details |
 
-```bash
-GRIDPULSE_TEST_METABASE_URL=http://localhost:TEST_PORT pytest tests/metabase_api_test.py
-```
+## Remaining work
 
-Do not point this at your main Metabase instance. Remove the disposable container
-after testing, since its application database holds the test account and database
-connection credentials. Neither integration test changes production source data.
-
-## Status
-
-- [X] Ingestion for all three sources (8 endpoints), raw JSONB layer
-- [X] dbt staging models with UTC settlement normalisation + test suite
-- [X] Settlement-period dimension spine, DST unit tests, CI (pytest)
-- [X] Backfill + revision sweeps for CI and Elexon
-- [X] Local Dagster orchestration: ingestion assets + schedules
-- [X] Cloud Postgres on Azure, historical load complete and validated by the dbt suite
-- [X] Unattended scheduled runs: Dagster deployed on an Azure VM, first scheduled run 2026-08-06
-- [X] Marts: six tables keyed on the UTC half hour, latest-value dedup, cross-source joins
-- [X] dbt orchestrated in Dagster: models and tests as assets, deployed 2026-08-27
-- [X] Incremental materialisation for the two models that rebuilt in full, keyed on arrival time
-- [X] CI building every model against an empty Postgres on each push
-- [X] Swap checked on every ingestion run, after the August outage
-- [ ] Ingestion hardening: validate responses at fetch, so a 200 carrying the wrong shape fails immediately (retries implemented)
-- [ ] dbt tests running in CI against seeded fixtures
-- [X] Repository-managed Metabase questions, coverage checks and SQL regression fixtures
-- [ ] Provision and visually verify the dashboard in the main Metabase instance
-- [ ] Demand/price forecast consumer
+- First deployed dashboard publish and verification of the public Pages site.
+- Provision and visually verify the main Metabase instance.
+- Validate response shapes during ingestion and add seeded dbt fixtures in CI.
+- Explore a demand/price forecasting consumer.
 
 ## Attribution & licences
 
