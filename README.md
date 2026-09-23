@@ -2,6 +2,11 @@
 
 **Electricity data analytics for Great Britain: carbon intensity, wholesale prices and demand forecast accuracy, backed by a reproducible Python, SQL and dbt pipeline.**
 
+**[View the live dashboard →](https://thrkld.github.io/gridpulse-dashboard/)**
+Explore 14 analyses with plain-language explanations, dated findings, expandable
+methods and data tables. No installation required. The dashboard is a published
+snapshot; check its update and coverage dates when interpreting the results.
+
 [![CI](https://github.com/thrkld/gridpulse/actions/workflows/ci.yml/badge.svg)](https://github.com/thrkld/gridpulse/actions/workflows/ci.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](pyproject.toml)
 [![dbt](https://img.shields.io/badge/dbt-9%20staging%20%C2%B7%206%20marts-orange)](dbt/models)
@@ -30,11 +35,6 @@ imbalance versus wholesale prices, price conditions and coverage checks.
 Metabase offers the same measures for further exploration.
 
 [![Demand forecast error at six advance timings, snapshot from 22 September 2026](docs/images/findings-2026-09-22/demand_accuracy.png)](docs/findings.md#demand-accuracy)
-
-The generated dashboard presents the same analyses with expandable methods and
-data tables. **Public deployment is pending:** its configured destination is
-[GitHub Pages](https://thrkld.github.io/gridpulse-dashboard/). The report above is
-available independently of that deployment.
 
 ## Analytical approach
 
@@ -103,8 +103,9 @@ repository-managed questions.
 
 Python ingestion and dbt transformations run on an Azure VM with Azure Database
 for PostgreSQL. Dagster coordinates ingestion, revision sweeps and model builds.
-Dashboard publishing is implemented with a six-hourly schedule; the first deployed
-publish remains pending. See [deployment and schedules](docs/operations.md).
+The dashboard is published on [GitHub Pages](https://thrkld.github.io/gridpulse-dashboard/),
+with a six-hourly publishing schedule implemented in Dagster. See
+[deployment and schedules](docs/operations.md).
 
 ## Dealing with different 'clocks'
 
@@ -189,7 +190,6 @@ The SQL fixture tests and the Metabase end-to-end test need external services an
 
 ## Remaining work
 
-- First deployed dashboard publish and verification of the public Pages site.
 - Provision and visually verify the main Metabase instance.
 - Validate response shapes during ingestion and add seeded dbt fixtures in CI.
 - Explore a demand/price forecasting consumer.
