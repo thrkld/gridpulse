@@ -9,3 +9,5 @@ dagster==1.13.13
 matplotlib==3.10.5
 dagster-webserver==1.13.13
 dagster-postgres==0.29.13
+# 2.1 makes psycopg 3 the default postgresql:// driver; dagster-postgres needs psycopg2
+sqlalchemy==2.0.54
