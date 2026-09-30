@@ -6,7 +6,7 @@ Ingestion and transformation both run unattended in the cloud. Dagster schedules
 
 | Schedule | Cadence | What it does |
 |---|---|---|
-| `half_hourly_refresh` | every 30 min | latest carbon intensity and Elexon |
+| `half_hourly_refresh` | every 30 min | latest carbon intensity, its 48 h forward forecast, and Elexon |
 | `twice_daily_refresh` | 10:00 and 22:00 UTC | full NESO snapshot |
 | `daily_sweep` | 00:15 UTC | carbon intensity trailing 48 h, Elexon interim settlement 7 d |
 | `weekly_sweep` | 00:45 Sunday | Elexon initial settlement, trailing 35 d |

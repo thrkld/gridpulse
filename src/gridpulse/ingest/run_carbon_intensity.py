@@ -2,6 +2,7 @@ from gridpulse.clients.carbon_intensity import (
     fetch_generation_ci,
     fetch_generation_ci_range,
     fetch_national_ci,
+    fetch_national_ci_forward,
     fetch_national_ci_range,
     fetch_regional_ci,
     fetch_regional_ci_range,
@@ -28,6 +29,24 @@ def run_latest():
             "carbon_intensity_raw", result["ingested_utc"], result["payload"], endpoint
         )
         print(f"inserted {endpoint}")
+
+
+# Stored apart from 'national', whose staging model the marts read as observed
+# intensity. A missed run loses that vintage for good, but each run overlaps the
+# last by 47.5 hours, so a miss thins the history without leaving a hole in it
+def run_forward(now: datetime | None = None):
+    now = now or datetime.now(UTC)
+    result = fetch_national_ci_forward(now)
+    # nothing can re-fetch this later, so an empty reply has to fail the run
+    if not result["payload"].get("data"):
+        raise RuntimeError(f"national-forward returned no forecasts from {now}")
+    insert_raw(
+        "carbon_intensity_raw",
+        result["ingested_utc"],
+        result["payload"],
+        "national-forward",
+    )
+    print(f"inserted national-forward from {now}")
 
 
 def run_sweep(now: datetime | None = None):

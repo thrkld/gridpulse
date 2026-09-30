@@ -220,3 +220,19 @@ been added to the spine as part of the dashboard work.
   and missing local half-hours are matched before using seasonal lag features.
 - Changing embedded generation means 2024 and 2026 are not interchangeable
   training populations. Use chronological evaluation and report seasonal errors.
+
+## Forward carbon forecast probe (30 September 2026)
+
+- `/intensity/{from}/fw48h` returns 96 half hours, starting with the one that
+  contains `from`, in about 11 KB. Every actual is null, the current period's
+  included.
+- A `from` exactly on a half-hour boundary also returns the period ending there,
+  97 records, and that period carries its actual: the same quirk as the range
+  endpoints. Lead times should be measured from `ingested_at` and negative leads
+  dropped before anything is scored.
+- A past `from` returns the final forecasts and actuals, matching the range
+  endpoint value for value (checked on 29 September, 09:30 to 11:30 UTC). A
+  vintage therefore exists only if it was captured while current, and capture
+  starts when the `national-forward` ingestion is deployed.
+- The payload carries no issue time. `ingested_at` is the only vintage stamp, and
+  the forecast may have been computed some minutes before it was fetched.

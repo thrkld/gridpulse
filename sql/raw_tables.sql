@@ -2,7 +2,7 @@
 CREATE TABLE IF NOT EXISTS carbon_intensity_raw (
     id SERIAL PRIMARY KEY,
     ingested_at TIMESTAMPTZ NOT NULL,
-    endpoint TEXT NOT NULL, -- 'regional' | 'national' | 'generation'
+    endpoint TEXT NOT NULL, -- 'regional' | 'national' | 'national-forward' | 'generation'
     payload JSONB NOT NULL
 );
 

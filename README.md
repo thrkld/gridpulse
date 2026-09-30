@@ -115,7 +115,7 @@ Carbon Intensity and Elexon both publish UTC instants, but NESO publishes a *loc
 
 | Source | Data | Initial load | Ongoing | Revision sweep |
 |---|---|---|---|---|
-| [Carbon Intensity API](https://carbonintensity.org.uk/) | gCO₂/kWh, generation mix, national + regional | backfill from 2024-01-01 via date-range endpoints, fetched in ~14-day chunks (regional is 7 days) | every 30 min | daily, trailing 48 h. Actuals land within hours and are stable after a day; regional is forecast-only, so no sweep |
+| [Carbon Intensity API](https://carbonintensity.org.uk/) | gCO₂/kWh, generation mix, national + regional, national 48 h forecast vintages | backfill from 2024-01-01 via date-range endpoints, fetched in ~14-day chunks (regional is 7 days) | every 30 min | daily, trailing 48 h. Actuals land within hours and are stable after a day; regional is forecast-only, so no sweep |
 | [NESO Data Portal](https://www.neso.energy/data-portal) | national demand, embedded generation, interconnector flows | one call per year against the historic demand resources, from 2024-01-01 | 2x daily full snapshot | built in: the live feed is a rolling window, so every fetch re-captures the full revision period |
 | [Elexon BMRS](https://bmrs.elexon.co.uk/) | imbalance prices, market index, demand forecast and outturn | backfill from 2024-01-01: one call per settlement date for imbalance and one per day of publications for the forecast | every 30 min | daily trailing 7 days (interim settlement run) and weekly trailing 35 days (initial settlement run); later reconciliation runs are out of scope by design |
 

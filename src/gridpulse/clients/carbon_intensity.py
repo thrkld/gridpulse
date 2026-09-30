@@ -44,6 +44,18 @@ def fetch_national_ci_range(from_dt: datetime, to_dt: datetime) -> dict:
     return {"ingested_utc": datetime.now(timezone.utc).isoformat(), "payload": n.json()}
 
 
+# The next 48 hours of forecasts as they stand at the time of the call; a past
+# from_dt returns final forecasts and actuals instead, so vintages cannot be backfilled
+def fetch_national_ci_forward(from_dt: datetime) -> dict:
+    if from_dt.tzinfo is None:
+        raise ValueError("datetime must be timezone-aware")
+    n = get_with_retry(
+        f"https://api.carbonintensity.org.uk/intensity/{fmt(from_dt)}/fw48h",
+        headers=headers,
+    )
+    return {"ingested_utc": datetime.now(timezone.utc).isoformat(), "payload": n.json()}
+
+
 def fetch_generation_ci() -> dict:
     g = get_with_retry("https://api.carbonintensity.org.uk/generation", headers=headers)
     return {"ingested_utc": datetime.now(timezone.utc).isoformat(), "payload": g.json()}

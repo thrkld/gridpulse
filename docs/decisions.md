@@ -129,6 +129,16 @@ Market index and the demand forecast are re-fetched over the trailing 24 hours o
 
 **Status:** implemented.
 
+### Forward carbon forecasts are captured on every half-hourly run
+
+The national 48-hour forecast (`/intensity/{from}/fw48h`) is fetched every half hour by its own Dagster asset and stored under the endpoint `national-forward`.
+
+**Why:** The API only serves the forecast as it currently stands. A past `from` returns the final forecasts and actuals, identical to the range endpoint, so a vintage exists only if it is captured while current. Without vintages the carbon forecast cannot be scored at a fixed number of hours ahead, which the stored `intensity_forecast` does not allow. The payload has no issue time, so `ingested_at` is the vintage: the time the forecast was seen, which is what an as-of comparison needs. The separate endpoint value keeps forecast-only rows out of `stg_ci_national`, which the marts read as observed intensity. The separate asset lets this and the latest ingestion fail independently. An empty response fails the run, since nothing can re-fetch it.
+
+**Rejected:** Adding the fetch to the loop in `run_latest`, where one endpoint's failure stops the rest; and a sweep or catch-up window, which would have nothing to collect.
+
+**Status:** partial. Ingestion is implemented; no staging model reads it yet.
+
 ### Requests never span a calendar year
 
 Carbon intensity backfill chunks are split at 1 January before being sent.

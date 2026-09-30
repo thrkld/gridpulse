@@ -18,6 +18,7 @@ from dagster_dbt import (
 
 from gridpulse.health import check_swap
 from gridpulse.ingest.run_carbon_intensity import (
+    run_forward as ci_run_forward,
     run_latest as ci_run_latest,
     run_sweep as ci_run_sweep,
 )
@@ -50,6 +51,13 @@ def carbon_intensity_latest_raw():
 @asset
 def carbon_intensity_sweep_raw():
     ci_run_sweep()
+
+
+# Its own asset so this and the latest ingestion cannot stop each other, which
+# matters more here: a forecast vintage missed now can never be fetched again
+@asset
+def carbon_intensity_forward_raw():
+    ci_run_forward()
 
 
 @asset(key=AssetKey(["gridpulse", "elexon_raw"]))
@@ -105,7 +113,12 @@ def dashboard_site():
 half_hourly_schedule = ScheduleDefinition(
     name="half_hourly_refresh",
     cron_schedule="*/30 * * * *",  # Runs every 30min
-    target=[carbon_intensity_latest_raw, elexon_latest_raw, host_has_swap],
+    target=[
+        carbon_intensity_latest_raw,
+        carbon_intensity_forward_raw,
+        elexon_latest_raw,
+        host_has_swap,
+    ],
     execution_timezone="UTC",
 )
 
@@ -178,6 +191,7 @@ defs = Definitions(
         gridpulse_dbt_assets,
         carbon_intensity_latest_raw,
         carbon_intensity_sweep_raw,
+        carbon_intensity_forward_raw,
         elexon_latest_raw,
         elexon_sweep_initial_raw,
         elexon_sweep_interim_raw,
