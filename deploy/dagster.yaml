@@ -10,9 +10,9 @@ storage:
       db_name:
         env: DAGSTER_PG_DB
       port: 5432
-      params:
-        sslmode: verify-full
-        sslrootcert: /etc/ssl/certs/ca-certificates.crt
+      # no TLS settings: the database runs on this host and the connection stays on
+      # the compose network. Dagster passes params through literally, so they could
+      # not be switched per environment anyway
 
 run_coordinator:
   module: dagster.core.run_coordinator

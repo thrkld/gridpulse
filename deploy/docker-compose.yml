@@ -1,4 +1,45 @@
+# Docker never rotates container logs by default, and on a 40 GB disk with nothing
+# else cleaning up, that is a slow way to fill it. This keeps each service to 30 MB
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
+  postgres:
+    image: postgres:16 # matches the Azure server it replaces, and CI
+    # the host's loopback only: reachable through an SSH tunnel, never from outside
+    ports:
+      - "127.0.0.1:5432:5432"
+    env_file: ../.env
+    environment:
+      POSTGRES_DB: gridpulse
+      POSTGRES_USER: gridpulse
+    # sized to share 4 GB with a 1.9 GB dbt peak, so shared_buffers sits well under
+    # the usual 25%. work_mem is four times the 4 MB that spilled 166 GB of temporary
+    # files to disk on Azure
+    command: >
+      postgres
+      -c shared_buffers=512MB
+      -c effective_cache_size=1536MB
+      -c work_mem=16MB
+      -c maintenance_work_mem=128MB
+    # parallel query workers share memory through /dev/shm, and Docker's 64 MB
+    # default fails them on a large sort
+    shm_size: 256mb
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # -h is explicit because the env file sets PGHOST for the other services
+      test: ["CMD-SHELL", "pg_isready -h localhost -U gridpulse -d gridpulse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    logging: *logging
+
   webserver:
     build: ..
     image: gridpulse-dagster
@@ -6,13 +47,23 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     env_file: ../.env
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
+    logging: *logging
 
   daemon:
     image: gridpulse-dagster
     depends_on:
-      - webserver
+      postgres:
+        condition: service_healthy
+      webserver:
+        condition: service_started
     command: dagster-daemon run -m gridpulse.orchestration.definitions
     env_file: ../.env
     restart: unless-stopped
+    logging: *logging
 
+volumes:
+  pgdata:
