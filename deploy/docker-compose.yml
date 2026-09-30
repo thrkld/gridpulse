@@ -16,6 +16,11 @@ services:
     environment:
       POSTGRES_DB: gridpulse
       POSTGRES_USER: gridpulse
+      # the env file's PG* settings point the other services at this server. In here
+      # they would send psql, pg_dump and the healthcheck back out over the network
+      # with the wrong SSL mode, so they are pointed at the local socket instead
+      PGHOST: /var/run/postgresql
+      PGSSLMODE: disable
     # sized to share 4 GB with a 1.9 GB dbt peak, so shared_buffers sits well under
     # the usual 25%. work_mem is four times the 4 MB that spilled 166 GB of temporary
     # files to disk on Azure
@@ -32,7 +37,8 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      # -h is explicit because the env file sets PGHOST for the other services
+      # over TCP on purpose: first-time setup runs a temporary server on the socket
+      # alone, which would otherwise pass as healthy before setup had finished
       test: ["CMD-SHELL", "pg_isready -h localhost -U gridpulse -d gridpulse"]
       interval: 10s
       timeout: 5s
