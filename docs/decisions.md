@@ -204,7 +204,7 @@ The dbt project is loaded through `dagster-dbt`, so every model and test is an a
 
 All six marts rebuild every six hours, and the full graph including every test runs nightly.
 
-**Why:** A full build spends 1,967 seconds of database time, and 896 of those are tests against the 15 million row regional generation view. Refreshing that often enough for a dashboard would keep a burstable server under sustained load and starve the ingestion that shares it. Staging is materialised as views, so a frequent refresh does not need to touch them at all, and selecting the marts alone brought the run down to 202 seconds.
+**Why:** A full build takes about ten minutes and spends 1,967 seconds of database time across its threads. Most of that is tests against the staging views, because every query on a view runs `jsonb_array_elements` over the raw payloads again, and 896 seconds go on the 15 million row regional generation view alone. Refreshing that often enough for a dashboard would keep a burstable server under sustained load and starve the ingestion that shares it. Creating the views costs almost nothing, so the saving from selecting the marts alone is in skipping the tests against them, and it brought the run from about ten minutes to 202 seconds.
 
 **Rejected:** Excluding only the regional mart, which reads as the obvious optimisation and saves 11%, because the expensive tests hang off staging rather than off the mart; and one nightly build, which leaves a dashboard a day stale.
 
