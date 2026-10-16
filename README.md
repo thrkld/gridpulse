@@ -101,8 +101,15 @@ repository-managed questions.
 
 ## Operations
 
-Python ingestion and dbt transformations run on an Azure VM with Azure Database
-for PostgreSQL. Dagster coordinates ingestion, revision sweeps and model builds.
+Everything runs on a single Hetzner CX23 (2 vCPU, 4 GB) as one Docker Compose
+stack: PostgreSQL 16, the Dagster webserver and the Dagster daemon
+([deploy/docker-compose.yml](deploy/docker-compose.yml)). Dagster coordinates
+ingestion, revision sweeps and model builds, and keeps its run history in a second
+database on the same server. Postgres and the Dagster UI listen on the host's
+loopback only and are reached through an SSH tunnel. The pipeline moved here from
+Azure on 1 October 2026, after the burstable Azure Postgres ran out of CPU credits
+and the nightly build stopped finishing.
+
 The dashboard is published on [GitHub Pages](https://thrkld.github.io/gridpulse-dashboard/),
 with a six-hourly publishing schedule implemented in Dagster. See
 [deployment and schedules](docs/operations.md).
@@ -130,7 +137,7 @@ Requires Docker and Python 3.12+.
 git clone https://github.com/thrkld/gridpulse && cd gridpulse
 
 # database
-cp .env.example .env # local password, plus PG* settings if using a hosted database
+cp .env.example .env # local password; the commented PG* and DAGSTER_PG_* lines are for the server
 docker compose up -d
 docker exec -i gridpulse-postgres-1 psql -U gridpulse -d gridpulse < sql/raw_tables.sql
 
@@ -151,14 +158,22 @@ pip install -r requirements-dbt.txt
 cd dbt && dbt deps && dbt build
 ```
 
-dbt reads `dbt/profiles.yml`, which is committed and takes its connection details from the environment, so the same file serves a laptop, the local Docker database and the deployed container. It has a `dev` output pointing at localhost and a `prod` output for the hosted database.
+dbt reads `dbt/profiles.yml`, which is committed and takes its connection details from the environment, so the same file serves a laptop, the local Docker database and the deployed container. It has a `dev` output pointing at localhost and a `prod` output driven by the `PG*` variables, which the deployed image selects by default.
 
-dbt does not read `.env` itself, so export it first when building against the cloud:
+dbt does not read `.env` itself, so export it first when using the `prod` target from a shell:
 
 ```bash
 set -a && . .env && set +a
 cd dbt && DBT_TARGET=prod dbt build
 ```
+
+To run the deployed stack (Postgres, Dagster webserver and daemon) on a server, uncomment the server block in `.env`, then:
+
+```bash
+docker compose -f deploy/docker-compose.yml up -d --build
+```
+
+The `dagster` database is created on first start by `deploy/initdb/`; the raw tables still come from `sql/raw_tables.sql` as above.
 
 Once the marts exist, `python -m gridpulse.charts site --out build/site` writes the dashboard page and its PNGs locally, without publishing anything. Publishing additionally needs `DASHBOARD_REPO` and a fine-grained `DASHBOARD_TOKEN` holding contents write on the dashboard repository alone. Metabase setup is in [docs/metabase.md](docs/metabase.md).
 
@@ -190,6 +205,8 @@ The SQL fixture tests and the Metabase end-to-end test need external services an
 
 ## Remaining work
 
+- Nightly off-box backups of the server's Postgres, with a tested restore.
+- Alert on low available memory on the server.
 - Provision and visually verify the main Metabase instance.
 - Validate response shapes during ingestion and add seeded dbt fixtures in CI.
 - Explore a demand/price forecasting consumer.
